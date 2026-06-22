@@ -40,16 +40,18 @@ class FluxViewport(QWidget):
             self._placeholder.setText("3D flux view is unavailable in headless mode.")
             return
         try:
-            import pyvista as pv
             from pyvistaqt import QtInteractor
+
+            from .render import flat_flux_surface
 
             if self._interactor is None:
                 self._interactor = QtInteractor(self)
                 self._layout.addWidget(self._interactor)
                 self._placeholder.hide()
-            grid = pv.read(self._vtk_path)
+            surface = flat_flux_surface(self._vtk_path)
             self._interactor.clear()
-            self._interactor.add_mesh(grid, scalars="flux", cmap="viridis")
+            self._interactor.add_mesh(surface, scalars="flux", cmap="viridis", show_edges=False)
+            self._interactor.enable_parallel_projection()
             self._interactor.view_xy()
             self._interactor.reset_camera()
         except Exception as exc:  # noqa: BLE001 — never let viz kill the app
