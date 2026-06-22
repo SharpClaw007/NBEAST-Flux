@@ -93,3 +93,14 @@ class RunController(QObject):
     def cancel(self) -> None:
         if self._worker is not None:
             self._worker.cancel()
+
+    def stop_and_wait(self, timeout_ms: int = 10_000) -> None:
+        """Cancel any run and block until the worker thread unwinds. For shutdown."""
+        if self._worker is not None:
+            self._worker.cancel()
+        thread = self._thread
+        if thread is not None:
+            thread.quit()
+            thread.wait(timeout_ms)
+        self._worker = None
+        self._thread = None

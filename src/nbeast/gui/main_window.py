@@ -232,3 +232,8 @@ class MainWindow(QMainWindow):
         self.run_action.setEnabled(True)
         self.stop_action.setEnabled(False)
         self.statusBar().showMessage(f"Error: {message}")
+
+    def closeEvent(self, event) -> None:
+        # Don't leave an OpenMC worker subprocess running after the window closes.
+        self.controller.stop_and_wait()
+        super().closeEvent(event)
