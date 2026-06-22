@@ -35,7 +35,7 @@ def test_flux_viewport_headless_safe(qapp):
     from nbeast.gui.viewport3d import FluxViewport
 
     view = FluxViewport()
-    view.set_vtk("/does/not/matter.vtk")  # headless guard returns before reading
+    view.show_field("/does/not/matter.vtk", scalar="flux", title="Flux")  # guard returns first
     assert view._interactor is None  # no GL widget created headlessly
     view.close()
 
@@ -69,4 +69,14 @@ def test_run_produces_spectrum_flux_and_png(qapp, tmp_path):
 
     png = render.flux_to_png(vtk, tmp_path / "flux.png")
     assert png.exists() and png.stat().st_size > 0
+
+    # Results field toggle: fission map is available and renders.
+    assert win.results_list.isEnabled()
+    win._show_field("fission", switch_tab=False)
+    fission_vtk = pathlib.Path(result.statepoint).parent / "fission.vtk"
+    assert fission_vtk.exists(), "fission VTK not written"
+    fpng = render.flux_to_png(
+        fission_vtk, tmp_path / "fission.png", scalar="fission", title="Fission rate"
+    )
+    assert fpng.exists() and fpng.stat().st_size > 0
     win.close()

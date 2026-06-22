@@ -23,12 +23,12 @@ def flat_flux_surface(vtk_path):
     return grid.slice(normal="z")
 
 
-def flux_to_png(vtk_path, png_path, title: str = "Scalar flux") -> Path:
+def flux_to_png(vtk_path, png_path, scalar: str = "flux", title: str = "Scalar flux") -> Path:
     import pyvista as pv
 
     surface = flat_flux_surface(vtk_path)
     plotter = pv.Plotter(off_screen=True)
-    plotter.add_mesh(surface, scalars="flux", cmap="viridis", show_edges=False)
+    plotter.add_mesh(surface, scalars=scalar, cmap="viridis", show_edges=False)
     plotter.enable_parallel_projection()
     plotter.view_xy()
     plotter.add_text(title, font_size=10)

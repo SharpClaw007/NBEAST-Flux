@@ -37,15 +37,16 @@ def add_flux_mesh(
     dimension: tuple[int, int, int],
     lower_left: tuple[float, float, float],
     upper_right: tuple[float, float, float],
+    scores: tuple[str, ...] = ("flux",),
 ) -> openmc.RegularMesh:
-    """Add a regular-mesh flux tally (name: 'flux_mesh'). Returns the mesh."""
+    """Add a regular-mesh tally (name: 'flux_mesh') over the given scores. Returns the mesh."""
     mesh = openmc.RegularMesh()
     mesh.dimension = dimension
     mesh.lower_left = lower_left
     mesh.upper_right = upper_right
     tally = openmc.Tally(name="flux_mesh")
     tally.filters = [openmc.MeshFilter(mesh)]
-    tally.scores = ["flux"]
+    tally.scores = list(scores)
     _append(model, tally)
     return mesh
 
@@ -69,4 +70,6 @@ def add_flux_slice_mesh(
 
     x0, x1 = finite(float(lower[0]), float(upper[0]), 1.0)
     y0, y1 = finite(float(lower[1]), float(upper[1]), 1.0)
-    return add_flux_mesh(model, (n, n, 1), (x0, y0, -z_half), (x1, y1, z_half))
+    return add_flux_mesh(
+        model, (n, n, 1), (x0, y0, -z_half), (x1, y1, z_half), scores=("flux", "fission")
+    )

@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QHeaderView,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QSpinBox,
     QTableWidget,
@@ -38,6 +40,7 @@ from .spectrum import SpectrumView
 from .viewport3d import FluxViewport
 
 _GROUPS = ("Materials", "Geometry")
+FIELD_TITLES = {"flux": "Scalar flux", "fission": "Fission rate"}
 
 
 def _inactive_for(batches: int) -> int:
@@ -56,6 +59,7 @@ class MainWindow(QMainWindow):
         # Per-template current parameter values, initialised from defaults.
         self._param_values = {label: spec.defaults() for label, spec in specs.SPECS.items()}
         self._total_batches = 0
+        self._statepoint: str | None = None
         self.last_result = None
 
         self.controller = RunController()
@@ -122,6 +126,20 @@ class MainWindow(QMainWindow):
         props_dock = QDockWidget("Properties (select a group to edit)", self)
         props_dock.setWidget(self.properties)
         self.addDockWidget(Qt.LeftDockWidgetArea, props_dock)
+
+        # Right dock: results field picker (enabled once a run finishes).
+        self.results_list = QListWidget()
+        for label, score in (("Scalar flux", "flux"), ("Fission rate", "fission")):
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, score)
+            self.results_list.addItem(item)
+        self.results_list.setEnabled(False)
+        self.results_list.itemClicked.connect(
+            lambda item: self._show_field(item.data(Qt.UserRole), switch_tab=True)
+        )
+        results_dock = QDockWidget("Results", self)
+        results_dock.setWidget(self.results_list)
+        self.addDockWidget(Qt.RightDockWidgetArea, results_dock)
 
     def _build_central(self) -> None:
         self.tabs = QTabWidget()
@@ -240,6 +258,7 @@ class MainWindow(QMainWindow):
         model = self._build_model()
         self.monitor.reset()
         self.spectrum_view.clear()
+        self.results_list.setEnabled(False)
         self.run_action.setEnabled(False)
         self.stop_action.setEnabled(True)
         self.statusBar().showMessage("Running…")
@@ -274,20 +293,37 @@ class MainWindow(QMainWindow):
             self._load_results(result.statepoint)
 
     def _load_results(self, statepoint: str) -> None:
-        """Populate the spectrum + flux views from a finished run (defensive)."""
+        """Populate spectrum + flux/fission views from a finished run (defensive)."""
         from nbeast.core.results import Results
 
+        self._statepoint = statepoint
         try:
             with Results(statepoint) as results:
                 spectrum = results.flux_spectrum()
                 self.spectrum_view.set_spectrum(spectrum.energy_edges, spectrum.flux)
-                vtk = Path(statepoint).parent / "flux.vtk"
-                results.flux_mesh_to_vtk(vtk)
-                self.flux_view.set_vtk(vtk)
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(
-                f"{self.statusBar().currentMessage()}  (viz unavailable: {exc})"
+                f"{self.statusBar().currentMessage()}  (spectrum unavailable: {exc})"
             )
+        self.results_list.setEnabled(True)
+        self.results_list.setCurrentRow(0)
+        self._show_field("flux", switch_tab=False)
+
+    def _show_field(self, score: str, switch_tab: bool = True) -> None:
+        """Render the chosen mesh field (flux/fission) in the Flux-map tab."""
+        if not self._statepoint:
+            return
+        from nbeast.core.results import Results
+
+        try:
+            vtk = Path(self._statepoint).parent / f"{score}.vtk"
+            with Results(self._statepoint) as results:
+                results.field_to_vtk(vtk, score)
+            self.flux_view.show_field(vtk, score, FIELD_TITLES.get(score, score))
+            if switch_tab:
+                self.tabs.setCurrentWidget(self.flux_view)
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
 
     def _on_failed(self, message: str) -> None:
         self.last_result = None

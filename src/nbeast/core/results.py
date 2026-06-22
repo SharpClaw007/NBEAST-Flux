@@ -34,15 +34,22 @@ class Results:
         flux = tally.get_values(scores=["flux"]).ravel()
         return Spectrum(np.asarray(energy_filter.values), flux)
 
-    def flux_mesh_to_vtk(self, path: str | Path) -> Path:
-        """Write the flux mesh tally to a VTK file (correct cell ordering) and
+    def mesh_scores(self) -> list[str]:
+        """Scores available on the mesh tally (e.g. ['flux', 'fission'])."""
+        return list(self._sp.get_tally(name="flux_mesh").scores)
+
+    def field_to_vtk(self, path: str | Path, score: str = "flux") -> Path:
+        """Write one mesh-tally score to a VTK file (correct cell ordering) and
         return the path. Consumed by the pyvista viewport."""
         tally = self._sp.get_tally(name="flux_mesh")
         mesh = tally.find_filter(openmc.MeshFilter).mesh
-        flux = tally.get_values(scores=["flux"]).ravel()
+        values = tally.get_values(scores=[score]).ravel()
         path = Path(path)
-        mesh.write_data_to_vtk(str(path), {"flux": flux})
+        mesh.write_data_to_vtk(str(path), {score: values})
         return path
+
+    def flux_mesh_to_vtk(self, path: str | Path) -> Path:
+        return self.field_to_vtk(path, "flux")
 
     def close(self) -> None:
         self._sp.close()

@@ -24,20 +24,24 @@ class FluxViewport(QWidget):
         self._layout.addWidget(self._placeholder)
         self._interactor = None
         self._vtk_path: str | None = None
+        self._scalar = "flux"
+        self._title = "Flux"
 
     @staticmethod
     def _headless() -> bool:
         return os.environ.get("QT_QPA_PLATFORM", "") == "offscreen"
 
-    def set_vtk(self, vtk_path) -> None:
+    def show_field(self, vtk_path, scalar: str = "flux", title: str = "Flux") -> None:
         self._vtk_path = str(vtk_path)
+        self._scalar = scalar
+        self._title = title
         self.render_flux()
 
     def render_flux(self) -> None:
         if not self._vtk_path:
             return
         if self._headless():
-            self._placeholder.setText("3D flux view is unavailable in headless mode.")
+            self._placeholder.setText(f"{self._title}: 3D view unavailable in headless mode.")
             return
         try:
             from pyvistaqt import QtInteractor
@@ -50,7 +54,8 @@ class FluxViewport(QWidget):
                 self._placeholder.hide()
             surface = flat_flux_surface(self._vtk_path)
             self._interactor.clear()
-            self._interactor.add_mesh(surface, scalars="flux", cmap="viridis", show_edges=False)
+            self._interactor.add_mesh(surface, scalars=self._scalar, cmap="viridis", show_edges=False)
+            self._interactor.add_text(self._title, font_size=10, name="title")
             self._interactor.enable_parallel_projection()
             self._interactor.view_xy()
             self._interactor.reset_camera()
