@@ -106,7 +106,13 @@ Prove the scary parts before building UI on top of them.
   tracks in an embedded Qt widget. **Done when:** a flux mesh tally renders in-app.
 - **Output:** short architecture-decision note + a pinned, known-good dependency set.
 
-### Phase 1 — Headless core (no GUI)
+### Phase 1 — Headless core (no GUI)  ✅ COMPLETE (2026-06-22)
+`src/nbeast/core/` built and tested: materials presets, geometry templates,
+benchmarks (Godiva k≈1.0, pin cell), subprocess `Runner` (live stream + cancel),
+`Results` reader (spectrum + mesh→VTK), deck `export` (model.xml + run.py). 6
+pytest regression tests pass locally; CI workflow added (`.github/workflows/ci.yml`,
+runs on first push). Done-criterion met: builds Godiva → runs → k≈1.0 → exports deck.
+
 - Domain model + OpenMC adapter (pin cell template + materials library)
 - `Runner` (architecture chosen in Phase 0) with clean callback API
 - `Results` reader (k-eff, spectrum, mesh tally)

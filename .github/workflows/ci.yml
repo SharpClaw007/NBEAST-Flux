@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: tests (linux-64, native OpenMC)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux x86-64 has a native conda-forge OpenMC build (no Rosetta needed).
+      - name: Set up conda env
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: nbeast-ci
+          condarc: |
+            channels:
+              - conda-forge
+          create-args: >-
+            python=3.12
+            openmc=0.15.3
+            pytest
+            pip
+
+      - name: Install package + data downloader
+        run: pip install -e . openmc_data_downloader==0.6.1
+
+      - name: Fetch curated cross-section data
+        run: python spikes/fetch_data.py data
+
+      - name: Run tests
+        env:
+          OPENMC_CROSS_SECTIONS: ${{ github.workspace }}/data/cross_sections.xml
+        run: pytest -v

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nbeast"
+version = "0.0.1"
+description = "An offline, open-source desktop GUI for neutron-flux Monte Carlo simulation, built on OpenMC"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "NBEAST contributors" }]
+keywords = ["neutronics", "monte-carlo", "openmc", "reactor-physics"]
+
+# NOTE: the heavy engine + scientific + GUI dependencies (openmc, numpy, h5py,
+# scipy, lxml, pyside6, pyvista, ...) are provided by the conda environment
+# (see environment.yml), not pip. Only pure-pip extras are declared here.
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
