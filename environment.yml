@@ -1,0 +1,29 @@
+# NBEAST development environment — Phase 0 pinned, known-good (2026-06-22).
+#
+# IMPORTANT: OpenMC has NO osx-arm64 build on conda-forge (only osx-64 + linux-64).
+# On Apple Silicon this env MUST be created as osx-64 and runs under Rosetta 2:
+#
+#     CONDA_SUBDIR=osx-64 conda env create -f environment.yml
+#     conda activate nbeast
+#     conda config --env --set subdir osx-64
+#
+# Linux x86-64 installs natively. See docs/phase0-notes.md for the arm64 plan.
+name: nbeast
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - openmc=0.15.3        # nompi / nodagmc build — matches v1 scope
+  - pyside6=6.11.1       # GUI shell
+  - pyvista=0.48.4       # 3D viewport
+  - pyvistaqt=0.11.4     # embed VTK in Qt
+  - pyqtgraph=0.14.0     # live convergence monitors
+  - vtk=9.6.2
+  - h5py
+  - numpy
+  - scipy
+  - lxml
+  - matplotlib           # static report figures
+  - pip
+  - pip:
+      - openmc_data_downloader==0.6.1   # curated per-nuclide data fetch

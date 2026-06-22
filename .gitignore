@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+*.h5
+data/
+.DS_Store
+# spike scratch outputs
+spikes/run/
+spikes/run_worker/
+spikes/run_mesh/
+*.vtk
+*.png
