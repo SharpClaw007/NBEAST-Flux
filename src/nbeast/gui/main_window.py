@@ -1,8 +1,10 @@
-"""NBEAST main window — the Caedium-style shell.
+"""NBEAST main window — the Caedium-style shell with an editable model tree.
 
-Toolbar (template + eigenvalue settings + Run/Stop), dockable Model tree and
-Properties grid, and tabbed viewports (live convergence monitor + a 3D-view
-placeholder for Phase 3). Transport runs off-thread via RunController.
+Toolbar = template pick + run settings + Run/Stop. The dockable **Model tree**
+shows the current parameter values; selecting a group ("Materials"/"Geometry")
+renders **editable fields** in the **Properties** panel. Edits drive the model
+that Run builds — so what the tree shows is exactly what runs. Transport runs
+off-thread via RunController.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QDoubleSpinBox,
     QHeaderView,
     QLabel,
     QMainWindow,
@@ -27,29 +30,12 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
 )
 
-from nbeast import core
+from nbeast.core import specs
 
 from .monitor import ConvergenceMonitor
 from .run_controller import RunController
 
-# Template metadata drives the UI without building an OpenMC model (so the
-# window constructs even with no cross-section data). build() is only called on Run.
-TEMPLATES = {
-    "Pin cell": {
-        "build": lambda batches, particles, inactive: core.templates.pin_cell(
-            batches=batches, particles=particles, inactive=inactive
-        ),
-        "materials": ["UO₂ fuel", "Zircaloy", "Water"],
-        "geometry": "PWR pin cell (reflective BCs)",
-    },
-    "Godiva": {
-        "build": lambda batches, particles, inactive: core.benchmarks.godiva(
-            batches=batches, particles=particles, inactive=inactive
-        ),
-        "materials": ["HEU metal (Godiva)"],
-        "geometry": "Bare HEU sphere (vacuum BC)",
-    },
-}
+_GROUPS = ("Materials", "Geometry")
 
 
 def _inactive_for(batches: int) -> int:
@@ -64,7 +50,9 @@ class MainWindow(QMainWindow):
         self.resize(1100, 720)
 
         self._run_root = Path(run_root) if run_root else Path(tempfile.gettempdir()) / "nbeast"
-        self._template = "Pin cell"
+        self._template = next(iter(specs.SPECS))  # "Pin cell"
+        # Per-template current parameter values, initialised from defaults.
+        self._param_values = {label: spec.defaults() for label, spec in specs.SPECS.items()}
         self._total_batches = 0
         self.last_result = None
 
@@ -88,7 +76,7 @@ class MainWindow(QMainWindow):
 
         tb.addWidget(QLabel(" Template: "))
         self.template_combo = QComboBox()
-        self.template_combo.addItems(TEMPLATES.keys())
+        self.template_combo.addItems(specs.SPECS.keys())
         self.template_combo.currentTextChanged.connect(self.set_template)
         tb.addWidget(self.template_combo)
 
@@ -129,7 +117,7 @@ class MainWindow(QMainWindow):
         self.properties.setHorizontalHeaderLabels(["Property", "Value"])
         self.properties.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.properties.verticalHeader().setVisible(False)
-        props_dock = QDockWidget("Properties", self)
+        props_dock = QDockWidget("Properties (select a group to edit)", self)
         props_dock.setWidget(self.properties)
         self.addDockWidget(Qt.LeftDockWidgetArea, props_dock)
 
@@ -142,25 +130,44 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(placeholder, "3D View")
         self.setCentralWidget(self.tabs)
 
-    # ---- model tree / properties -----------------------------------------
+    # ---- model tree -------------------------------------------------------
+    @property
+    def spec(self) -> specs.TemplateSpec:
+        return specs.SPECS[self._template]
+
     def set_template(self, name: str) -> None:
-        if name not in TEMPLATES:
+        if name not in specs.SPECS:
             return
         self._template = name
         if self.template_combo.currentText() != name:
             self.template_combo.setCurrentText(name)
+        self.properties.setRowCount(0)
         self._refresh_tree()
+
+    def set_param(self, key: str, value: float) -> None:
+        """Programmatic + UI entry point for editing a parameter."""
+        self._param_values[self._template][key] = value
+        self._refresh_tree()  # reflect new value in the tree (not Properties — keep editor focus)
+
+    def _value_text(self, param: specs.Parameter) -> str:
+        value = self._param_values[self._template][param.key]
+        unit = f" {param.unit}" if param.unit else ""
+        return f"{param.label} = {value:.{param.decimals}f}{unit}"
 
     def _refresh_tree(self) -> None:
         self.model_tree.clear()
-        meta = TEMPLATES[self._template]
+        spec = self.spec
 
         materials = QTreeWidgetItem(["Materials"])
-        for label in meta["materials"]:
+        for label in spec.materials:
             materials.addChild(QTreeWidgetItem([label]))
+        for p in spec.params_in("Materials"):
+            materials.addChild(QTreeWidgetItem([self._value_text(p)]))
 
         geometry = QTreeWidgetItem(["Geometry"])
-        geometry.addChild(QTreeWidgetItem([meta["geometry"]]))
+        geometry.addChild(QTreeWidgetItem([spec.geometry]))
+        for p in spec.params_in("Geometry"):
+            geometry.addChild(QTreeWidgetItem([self._value_text(p)]))
 
         settings = QTreeWidgetItem(["Settings"])
         settings.addChild(QTreeWidgetItem([f"batches = {self.batches_spin.value()}"]))
@@ -171,25 +178,55 @@ class MainWindow(QMainWindow):
             self.model_tree.addTopLevelItem(item)
             item.setExpanded(True)
 
-    def _on_tree_click(self, item: QTreeWidgetItem, _column: int) -> None:
-        rows = [("name", item.text(0))]
-        if item.parent() is None:
-            rows.append(("children", str(item.childCount())))
-        else:
-            rows.append(("group", item.parent().text(0)))
-        self._set_properties(rows)
+    # ---- properties (editing) --------------------------------------------
+    def _group_of(self, item: QTreeWidgetItem) -> str:
+        return item.text(0) if item.parent() is None else item.parent().text(0)
 
-    def _set_properties(self, rows) -> None:
+    def _on_tree_click(self, item: QTreeWidgetItem, _column: int) -> None:
+        group = self._group_of(item)
+        params = self.spec.params_in(group) if group in _GROUPS else []
+        if params:
+            self._render_param_editors(group, params)
+        else:
+            self._render_readonly(group)
+
+    def _render_param_editors(self, group: str, params: list[specs.Parameter]) -> None:
+        self.properties.setRowCount(len(params))
+        for row, p in enumerate(params):
+            label = f"{p.label} ({p.unit})" if p.unit else p.label
+            self.properties.setItem(row, 0, QTableWidgetItem(label))
+            editor = QDoubleSpinBox()
+            editor.setRange(p.minimum, p.maximum)
+            editor.setSingleStep(p.step)
+            editor.setDecimals(p.decimals)
+            editor.setValue(self._param_values[self._template][p.key])
+            editor.valueChanged.connect(lambda v, key=p.key: self.set_param(key, v))
+            self.properties.setCellWidget(row, 1, editor)
+
+    def _render_readonly(self, group: str) -> None:
+        if group == "Settings":
+            rows = [
+                ("batches", self.batches_spin.value()),
+                ("particles/batch", self.particles_spin.value()),
+                ("inactive", _inactive_for(self.batches_spin.value())),
+                ("(edit batches/particles in the toolbar)", ""),
+            ]
+        else:
+            rows = [("info", "fixed — not editable in v1")]
         self.properties.setRowCount(len(rows))
-        for r, (key, value) in enumerate(rows):
-            self.properties.setItem(r, 0, QTableWidgetItem(str(key)))
-            self.properties.setItem(r, 1, QTableWidgetItem(str(value)))
+        for row, (key, value) in enumerate(rows):
+            self.properties.setItem(row, 0, QTableWidgetItem(str(key)))
+            self.properties.setItem(row, 1, QTableWidgetItem(str(value)))
 
     # ---- run lifecycle ----------------------------------------------------
     def _build_model(self):
-        meta = TEMPLATES[self._template]
         batches = self.batches_spin.value()
-        return meta["build"](batches, self.particles_spin.value(), _inactive_for(batches))
+        return self.spec.build(
+            batches=batches,
+            particles=self.particles_spin.value(),
+            inactive=_inactive_for(batches),
+            **self._param_values[self._template],
+        )
 
     def start_run(self) -> None:
         if self.controller.running:

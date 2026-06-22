@@ -17,10 +17,11 @@ EXPECTED_KEFF = {
 }
 
 
-def godiva(**kwargs) -> openmc.model.Model:
-    """Bare HEU metal sphere; k_eff ~= 1.0. The fast-criticality trust anchor."""
+def godiva(radius: float = GODIVA_RADIUS, **kwargs) -> openmc.model.Model:
+    """Bare HEU metal sphere; k_eff ~= 1.0 at the benchmark radius. The
+    fast-criticality trust anchor (radius is adjustable for criticality studies)."""
     return templates.bare_sphere(
-        materials.heu_metal_godiva(), radius=GODIVA_RADIUS, **kwargs
+        materials.heu_metal_godiva(), radius=radius, **kwargs
     )
 
 

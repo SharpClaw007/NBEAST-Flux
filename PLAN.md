@@ -129,6 +129,13 @@ short Godiva run streams to the live monitor and yields k≈1.0. Full suite: 8 p
 NOTE: the 3D viewport is a placeholder (real pyvistaqt widget lands in Phase 3, needs
 a display). CI updated to install GUI deps + headless-Qt libs.
 
+### Phase 2.5 — Editable parameters  ✅ COMPLETE (2026-06-22)
+The Model tree + Properties panel are now a real editor (closing the "what am I
+simulating?" gap). Per-template parameter schemas live in `core/specs.py`
+(enrichment/pitch/radii for pin cell; radius for Godiva). The tree shows current
+values; selecting a group renders editable fields in Properties; edits drive
+`_build_model`. 11 tests pass (incl. edit-enrichment→composition-changes).
+
 - PySide6 ribbon + docking layout, model tree, properties grid, viewport tabs, status bar
 - Run control wired to the core `Runner` off-thread; live k-eff/entropy via pyqtgraph
 - **Done when:** open app → pick pin-cell template → Run → watch convergence live → see k-eff.
