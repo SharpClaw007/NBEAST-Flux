@@ -35,3 +35,37 @@ def flux_to_png(vtk_path, png_path, scalar: str = "flux", title: str = "Scalar f
     plotter.screenshot(str(png_path))
     plotter.close()
     return Path(png_path)
+
+
+def draw_tracks(plotter, polylines) -> None:
+    """Add particle-track polylines to a plotter, coloured by energy (log scale)."""
+    import pyvista as pv
+
+    energies = [pl["energy"] for pl in polylines]
+    emin = max(min(float(e.min()) for e in energies), 1e-5)
+    emax = max(max(float(e.max()) for e in energies), emin * 10.0)
+    for i, pl in enumerate(polylines):
+        line = pv.lines_from_points(pl["points"])
+        line["E"] = pl["energy"]
+        plotter.add_mesh(
+            line,
+            scalars="E",
+            cmap="plasma",
+            log_scale=True,
+            clim=(emin, emax),
+            line_width=2,
+            show_scalar_bar=(i == 0),
+            scalar_bar_args={"title": "E (eV)"},
+        )
+
+
+def tracks_to_png(polylines, png_path, title: str = "Neutron tracks") -> Path:
+    import pyvista as pv
+
+    plotter = pv.Plotter(off_screen=True)
+    draw_tracks(plotter, polylines)
+    plotter.add_text(title, font_size=10)
+    plotter.view_isometric()
+    plotter.screenshot(str(png_path))
+    plotter.close()
+    return Path(png_path)

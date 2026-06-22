@@ -140,16 +140,19 @@ values; selecting a group renders editable fields in Properties; edits drive
 - Run control wired to the core `Runner` off-thread; live k-eff/entropy via pyqtgraph
 - **Done when:** open app → pick pin-cell template → Run → watch convergence live → see k-eff.
 
-### Phase 3 — Visualization  ◐ IN PROGRESS (2026-06-22)
+### Phase 3 — Visualization  ✅ COMPLETE (2026-06-22)
 First increment done: GUI runs attach flux spectrum + flux slice-mesh tallies and
 write a statepoint (worker reports its path); **Spectrum** tab (pyqtgraph,
 flux-per-lethargy vs log-E) and **Flux map** tab (`FluxViewport`: pyvistaqt,
 created lazily + headless-guarded) added; off-screen flux→PNG render (`gui/render.py`)
 for headless tests and future report export. 13 tests pass; the pin-cell spectrum
 shows the correct thermal/epithermal/fast shape and the flux z-slice renders.
-REMAINING: verify the live embedded 3D `QtInteractor` on a real display (guarded
-out of headless); neutron-track visualization; fission-rate map + toggleable
-results tree (right dock).
+Now complete: live 3D `QtInteractor` verified on a real display (flux renders as a
+flat 2D slice); **fission-rate map** + **Results field toggle** (right dock);
+**neutron-track visualization** ("Show tracks" — energy-coloured polylines, born
+fast and slowing down). 16 tests pass. Known quirk: pin-cell tracks stream far in
+z (the lattice is axially unbounded) — bounded templates like Godiva render cleanly;
+a future tweak could add axial viz bounds.
 
 - 3D geometry render; flux/fission mesh-tally overlay with toggleable results tree; spectrum; particle tracks
 - **Done when:** results viewports deliver the Caedium-style multi-pane experience.

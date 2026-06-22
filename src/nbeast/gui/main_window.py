@@ -15,6 +15,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDockWidget,
     QDoubleSpinBox,
@@ -110,6 +111,11 @@ class MainWindow(QMainWindow):
         self.stop_action.setEnabled(False)
         self.stop_action.triggered.connect(self.stop_run)
         tb.addAction(self.stop_action)
+
+        tb.addSeparator()
+        self.tracks_action = QAction("Show tracks", self)
+        self.tracks_action.triggered.connect(self.show_tracks)
+        tb.addAction(self.tracks_action)
 
     def _build_docks(self) -> None:
         self.model_tree = QTreeWidget()
@@ -240,13 +246,18 @@ class MainWindow(QMainWindow):
             self.properties.setItem(row, 1, QTableWidgetItem(str(value)))
 
     # ---- run lifecycle ----------------------------------------------------
+    def _build_base_model(self, batches: int, particles: int, inactive: int):
+        return self.spec.build(
+            batches=batches,
+            particles=particles,
+            inactive=inactive,
+            **self._param_values[self._template],
+        )
+
     def _build_model(self):
         batches = self.batches_spin.value()
-        model = self.spec.build(
-            batches=batches,
-            particles=self.particles_spin.value(),
-            inactive=_inactive_for(batches),
-            **self._param_values[self._template],
+        model = self._build_base_model(
+            batches, self.particles_spin.value(), _inactive_for(batches)
         )
         tallies.add_flux_spectrum(model, n_groups=100)
         tallies.add_flux_slice_mesh(model, n=40)
@@ -324,6 +335,25 @@ class MainWindow(QMainWindow):
                 self.tabs.setCurrentWidget(self.flux_view)
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
+
+    def show_tracks(self) -> None:
+        """Generate a few neutron tracks and render them in the Flux-map tab."""
+        from nbeast.core import tracks
+
+        self.statusBar().showMessage("Generating neutron tracks…")
+        QApplication.processEvents()
+        try:
+            model = self._build_base_model(batches=1, particles=15, inactive=0)
+            path = tracks.generate(model, n_particles=15, run_dir=self._run_root / "tracks")
+            polylines = tracks.read_polylines(path, max_polylines=60)
+            if not polylines:
+                self.statusBar().showMessage("No neutron tracks were generated.")
+                return
+            self.flux_view.show_tracks(polylines, title=f"{self._template} — neutron tracks")
+            self.tabs.setCurrentWidget(self.flux_view)
+            self.statusBar().showMessage(f"Showing {len(polylines)} neutron tracks")
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Track generation failed: {exc}")
 
     def _on_failed(self, message: str) -> None:
         self.last_result = None

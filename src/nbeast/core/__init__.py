@@ -1,6 +1,6 @@
 """nbeast.core — the Qt-free engine layer."""
 
-from . import benchmarks, export, materials, results, runner, specs, tallies, templates
+from . import benchmarks, export, materials, results, runner, specs, tallies, templates, tracks
 from .results import Results, Spectrum
 from .runner import BatchUpdate, Runner, RunResult
 from .specs import SPECS, Parameter, TemplateSpec
@@ -13,6 +13,7 @@ __all__ = [
     "runner",
     "results",
     "export",
+    "tracks",
     "specs",
     "SPECS",
     "Parameter",
