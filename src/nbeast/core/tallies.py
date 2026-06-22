@@ -6,6 +6,8 @@ Two v1 result types: an energy **spectrum** (flux vs energy) and a spatial
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import openmc
 
@@ -46,3 +48,25 @@ def add_flux_mesh(
     tally.scores = ["flux"]
     _append(model, tally)
     return mesh
+
+
+def add_flux_slice_mesh(
+    model: openmc.model.Model, n: int = 40, z_half: float = 1.0
+) -> openmc.RegularMesh:
+    """Add an n×n flux mesh on a central z-slice, sized to the model's geometry.
+
+    Bounds come from the geometry bounding box; infinite axes (e.g. the
+    unbounded z of a 2D pin cell) collapse to a thin slab so the result is a
+    clean 2D flux map regardless of template.
+    """
+    bbox = model.geometry.bounding_box
+    lower, upper = bbox.lower_left, bbox.upper_right
+
+    def finite(lo: float, hi: float, default: float) -> tuple[float, float]:
+        lo = lo if math.isfinite(lo) else -default
+        hi = hi if math.isfinite(hi) else default
+        return lo, hi
+
+    x0, x1 = finite(float(lower[0]), float(upper[0]), 1.0)
+    y0, y1 = finite(float(lower[1]), float(upper[1]), 1.0)
+    return add_flux_mesh(model, (n, n, 1), (x0, y0, -z_half), (x1, y1, z_half))

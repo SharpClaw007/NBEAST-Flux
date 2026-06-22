@@ -30,10 +30,12 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
 )
 
-from nbeast.core import specs
+from nbeast.core import specs, tallies
 
 from .monitor import ConvergenceMonitor
 from .run_controller import RunController
+from .spectrum import SpectrumView
+from .viewport3d import FluxViewport
 
 _GROUPS = ("Materials", "Geometry")
 
@@ -124,10 +126,11 @@ class MainWindow(QMainWindow):
     def _build_central(self) -> None:
         self.tabs = QTabWidget()
         self.monitor = ConvergenceMonitor()
+        self.flux_view = FluxViewport()
+        self.spectrum_view = SpectrumView()
         self.tabs.addTab(self.monitor, "Convergence")
-        placeholder = QLabel("3D flux view — coming in Phase 3")
-        placeholder.setAlignment(Qt.AlignCenter)
-        self.tabs.addTab(placeholder, "3D View")
+        self.tabs.addTab(self.flux_view, "Flux map")
+        self.tabs.addTab(self.spectrum_view, "Spectrum")
         self.setCentralWidget(self.tabs)
 
     # ---- model tree -------------------------------------------------------
@@ -221,18 +224,22 @@ class MainWindow(QMainWindow):
     # ---- run lifecycle ----------------------------------------------------
     def _build_model(self):
         batches = self.batches_spin.value()
-        return self.spec.build(
+        model = self.spec.build(
             batches=batches,
             particles=self.particles_spin.value(),
             inactive=_inactive_for(batches),
             **self._param_values[self._template],
         )
+        tallies.add_flux_spectrum(model, n_groups=100)
+        tallies.add_flux_slice_mesh(model, n=40)
+        return model
 
     def start_run(self) -> None:
         if self.controller.running:
             return
         model = self._build_model()
         self.monitor.reset()
+        self.spectrum_view.clear()
         self.run_action.setEnabled(False)
         self.stop_action.setEnabled(True)
         self.statusBar().showMessage("Running…")
@@ -263,6 +270,24 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Done — k = {k_txt} ± {result.keff_std:.5f}")
         else:
             self.statusBar().showMessage("Done")
+        if not result.cancelled and result.statepoint:
+            self._load_results(result.statepoint)
+
+    def _load_results(self, statepoint: str) -> None:
+        """Populate the spectrum + flux views from a finished run (defensive)."""
+        from nbeast.core.results import Results
+
+        try:
+            with Results(statepoint) as results:
+                spectrum = results.flux_spectrum()
+                self.spectrum_view.set_spectrum(spectrum.energy_edges, spectrum.flux)
+                vtk = Path(statepoint).parent / "flux.vtk"
+                results.flux_mesh_to_vtk(vtk)
+                self.flux_view.set_vtk(vtk)
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(
+                f"{self.statusBar().currentMessage()}  (viz unavailable: {exc})"
+            )
 
     def _on_failed(self, message: str) -> None:
         self.last_result = None

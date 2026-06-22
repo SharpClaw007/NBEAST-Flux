@@ -38,7 +38,7 @@ def test_mainwindow_constructs(qapp):
     win = MainWindow()
     assert win.windowTitle()
     assert win.model_tree.topLevelItemCount() == 3  # Materials, Geometry, Settings
-    assert win.tabs.count() == 2  # Convergence + 3D placeholder
+    assert win.tabs.count() == 3  # Convergence + Flux map + Spectrum
 
     win.set_template("Godiva")
     # Godiva has a single material -> one child under "Materials".

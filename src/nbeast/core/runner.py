@@ -30,6 +30,7 @@ class BatchUpdate:
 class RunResult:
     keff: float | None = None
     keff_std: float | None = None
+    statepoint: str | None = None
     batches: list[BatchUpdate] = field(default_factory=list)
     cancelled: bool = False
     error: str | None = None
@@ -93,6 +94,7 @@ class Runner:
             elif kind == "done":
                 result.keff = msg["keff"]
                 result.keff_std = msg["keff_std"]
+                result.statepoint = msg.get("statepoint")
             elif kind == "error":
                 result.error = msg.get("message")
 

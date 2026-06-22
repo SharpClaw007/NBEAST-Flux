@@ -66,9 +66,15 @@ def main(argv: list[str]) -> int:
                 _emit({"type": "cancelled", "batch": lib.current_batch()})
                 break
         k = lib.keff()
+        # Persist a statepoint (with any tallies) so results can be visualised.
+        statepoint = os.path.abspath("statepoint.h5")
+        try:
+            lib.statepoint_write(statepoint)
+        except Exception:  # noqa: BLE001
+            statepoint = None
         lib.simulation_finalize()
         lib.finalize()
-        _emit({"type": "done", "keff": k[0], "keff_std": k[1]})
+        _emit({"type": "done", "keff": k[0], "keff_std": k[1], "statepoint": statepoint})
         return 0
     except Exception as exc:  # noqa: BLE001
         _emit({"type": "error", "message": str(exc), "trace": traceback.format_exc()})
