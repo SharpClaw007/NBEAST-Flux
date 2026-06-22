@@ -15,6 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # System libraries needed by the headless (offscreen) Qt platform plugin.
+      - name: Headless Qt system libs
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
+
       # Linux x86-64 has a native conda-forge OpenMC build (no Rosetta needed).
       - name: Set up conda env
         uses: mamba-org/setup-micromamba@v2
@@ -26,6 +30,8 @@ jobs:
           create-args: >-
             python=3.12
             openmc=0.15.3
+            pyside6
+            pyqtgraph
             pytest
             pip
 
@@ -38,4 +44,5 @@ jobs:
       - name: Run tests
         env:
           OPENMC_CROSS_SECTIONS: ${{ github.workspace }}/data/cross_sections.xml
+          QT_QPA_PLATFORM: offscreen
         run: pytest -v

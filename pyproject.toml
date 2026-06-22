@@ -20,6 +20,9 @@ dependencies = []
 [project.optional-dependencies]
 test = ["pytest"]
 
+[project.gui-scripts]
+nbeast = "nbeast.gui.app:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

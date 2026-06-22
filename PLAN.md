@@ -120,7 +120,15 @@ runs on first push). Done-criterion met: builds Godiva → runs → k≈1.0 → 
 - Godiva + pin-cell as **automated regression tests** in CI
 - **Done when:** `nbeast.core` builds Godiva, runs it, returns k≈1.0 ± stat, exports the deck — all in CI.
 
-### Phase 2 — Application shell
+### Phase 2 — Application shell  ✅ COMPLETE (2026-06-22)
+`src/nbeast/gui/`: MainWindow (toolbar with template/batches/particles + Run/Stop,
+dockable Model tree + Properties, Convergence monitor tab + 3D placeholder, status
+bar), RunController (QThread → core Runner, queued signals), pyqtgraph monitor.
+2 headless smoke tests pass (offscreen): window constructs without data, and a
+short Godiva run streams to the live monitor and yields k≈1.0. Full suite: 8 passed.
+NOTE: the 3D viewport is a placeholder (real pyvistaqt widget lands in Phase 3, needs
+a display). CI updated to install GUI deps + headless-Qt libs.
+
 - PySide6 ribbon + docking layout, model tree, properties grid, viewport tabs, status bar
 - Run control wired to the core `Runner` off-thread; live k-eff/entropy via pyqtgraph
 - **Done when:** open app → pick pin-cell template → Run → watch convergence live → see k-eff.
