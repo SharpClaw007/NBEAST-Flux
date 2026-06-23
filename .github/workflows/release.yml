@@ -1,0 +1,73 @@
+name: Release
+
+# Tag a version (e.g. `git tag v0.0.1 && git push --tags`) to build the three
+# installers and attach them to a GitHub Release. Version comes from the tag /
+# nbeast.__version__ (single source of truth).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the Release and upload assets
+
+jobs:
+  build:
+    name: installer (${{ matrix.platform }})
+    strategy:
+      fail-fast: false   # one platform failing shouldn't sink the others
+      matrix:
+        include:
+          - platform: linux-64
+            runner: ubuntu-latest
+          - platform: osx-64
+            runner: macos-13      # Intel
+          - platform: osx-arm64
+            runner: macos-14      # Apple Silicon (native build)
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build env: Python + OpenMC (for the data bundle) + constructor; rattler-build
+      # is added on arm64 to compile the native OpenMC the installer needs.
+      - name: Set up build environment
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: nbeast-build
+          condarc: |
+            channels:
+              - conda-forge
+          create-args: >-
+            python=3.12
+            openmc=0.15.3=nodagmc_nompi_*
+            constructor
+            pip
+
+      - name: Add rattler-build (arm64 native OpenMC)
+        if: matrix.platform == 'osx-arm64'
+        run: micromamba install -n nbeast-build -y -c conda-forge rattler-build
+
+      - name: Install nbeast + data downloader
+        run: pip install -e . openmc_data_downloader==0.6.1
+
+      - name: Cache cross-section data
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: nbeast-xs-data-${{ hashFiles('spikes/fetch_data.py') }}
+
+      - name: Fetch curated cross-section data
+        run: python spikes/fetch_data.py data
+
+      - name: Build installer
+        run: |
+          export NBEAST_ENVBIN="$CONDA_PREFIX/bin"   # env is active; constructor/rattler on PATH
+          packaging/build_installer.sh ${{ matrix.platform }}
+
+      - name: Attach installer to the Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/dist/NBEAST-*.sh
+          fail_on_unmatched_files: true

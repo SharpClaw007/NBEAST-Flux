@@ -188,10 +188,13 @@ bundle; arm64 confirmed `Mach-O arm64` end to end (python + openmc executable). 
 is single-sourced from `nbeast.__version__`.
 Docs done: README (end-user install + usage) and `packaging/RELEASE.md` (one-line
 version bump → build → smoke-test → sign → publish).
-Remaining: **in-app full-data download** (the one outstanding v1 *feature*); Linux
-installer + a release CI workflow (land with the GitHub repo); and the **account-gated
-finish** — macOS signing/notarization (needs an Apple Developer ID) and the public
-release (needs a GitHub repo).
+**Public repo live with green CI** (github.com/SharpClaw007/NBEAST-Flux). A release
+workflow (`.github/workflows/release.yml`) builds all three installers on a `v*` tag —
+including a native arm64 OpenMC compile on an Apple Silicon runner — and attaches them to
+a GitHub Release (unverified until the first tag; like ci.yml it may need a tuning pass).
+Remaining: **in-app full-data download** (the one outstanding v1 *feature*); **macOS
+signing/notarization** (needs an Apple Developer ID); and cutting the **first tagged
+release** (which exercises release.yml).
 
 - Polished installers (macOS signing/notarization decision; Linux AppImage); in-app full-data download
 - Docs/tutorials; public repo + license; build CI
