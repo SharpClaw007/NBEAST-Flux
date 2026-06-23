@@ -1,8 +1,10 @@
 name: Release
 
-# Tag a version (e.g. `git tag v0.0.1 && git push --tags`) to build the three
-# installers and attach them to a GitHub Release. Version comes from the tag /
+# Tag a version (e.g. `git tag v0.0.1 && git push origin v0.0.1`) to build the
+# installers and attach them to a GitHub Release. Version comes from
 # nbeast.__version__ (single source of truth).
+#
+# Targets: Linux x86-64 and macOS Apple Silicon. (Intel macOS is not supported.)
 on:
   push:
     tags: ["v*"]
@@ -11,27 +13,14 @@ permissions:
   contents: write   # create the Release and upload assets
 
 jobs:
-  build:
-    name: installer (${{ matrix.platform }})
-    strategy:
-      fail-fast: false   # one platform failing shouldn't sink the others
-      matrix:
-        include:
-          - platform: linux-64
-            runner: ubuntu-latest
-          - platform: osx-64
-            runner: macos-13      # Intel
-          - platform: osx-arm64
-            runner: macos-14      # Apple Silicon (native build)
-    runs-on: ${{ matrix.runner }}
+  linux:
+    name: installer (linux-64)
+    runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash -el {0}
     steps:
       - uses: actions/checkout@v4
-
-      # Build env: Python + OpenMC (for the data bundle) + constructor; rattler-build
-      # is added on arm64 to compile the native OpenMC the installer needs.
       - name: Set up build environment
         uses: mamba-org/setup-micromamba@v2
         with:
@@ -44,28 +33,68 @@ jobs:
             openmc=0.15.3=nodagmc_nompi_*
             constructor
             pip
-
-      - name: Add rattler-build (arm64 native OpenMC)
-        if: matrix.platform == 'osx-arm64'
-        run: micromamba install -n nbeast-build -y -c conda-forge rattler-build
-
       - name: Install nbeast + data downloader
         run: pip install -e . openmc_data_downloader==0.6.1
-
       - name: Cache cross-section data
         uses: actions/cache@v4
         with:
           path: data
           key: nbeast-xs-data-${{ hashFiles('spikes/fetch_data.py') }}
-
       - name: Fetch curated cross-section data
         run: python spikes/fetch_data.py data
-
       - name: Build installer
         run: |
-          export NBEAST_ENVBIN="$CONDA_PREFIX/bin"   # env is active; constructor/rattler on PATH
-          packaging/build_installer.sh ${{ matrix.platform }}
+          export NBEAST_ENVBIN="$CONDA_PREFIX/bin"
+          packaging/build_installer.sh linux-64
+      - name: Attach installer to the Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/dist/NBEAST-*.sh
+          fail_on_unmatched_files: true
 
+  # Apple Silicon: conda-forge has no arm64 OpenMC, so we compile the native
+  # nodagmc/nompi build first, install it for the data tooling, then bundle.
+  # (Best-effort in CI; the proven fallback is a local build + upload — see RELEASE.md.)
+  macos-arm64:
+    name: installer (osx-arm64)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap Miniforge + build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/mf.sh \
+            https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.sh
+          bash /tmp/mf.sh -b -p "$HOME/mf"
+          "$HOME/mf/bin/conda" create -y -n nbeast-build -c conda-forge \
+            python=3.12 constructor rattler-build pip
+          echo "$HOME/mf/envs/nbeast-build/bin" >> "$GITHUB_PATH"
+          echo "NBEAST_ENVBIN=$HOME/mf/envs/nbeast-build/bin" >> "$GITHUB_ENV"
+      - name: Build native arm64 OpenMC channel
+        shell: bash
+        run: bash packaging/openmc-arm64/build_openmc_arm64.sh /tmp/openmc-feedstock "$HOME/arm64ch"
+      - name: Install native OpenMC into the build env (for data tooling)
+        shell: bash
+        run: |
+          "$HOME/mf/bin/conda" install -y -n nbeast-build \
+            -c "file://$HOME/arm64ch" -c conda-forge "openmc=0.15.3=nodagmc_nompi_*"
+      - name: Install nbeast + data downloader
+        shell: bash
+        run: pip install -e . openmc_data_downloader==0.6.1
+      - name: Cache cross-section data
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: nbeast-xs-data-${{ hashFiles('spikes/fetch_data.py') }}
+      - name: Fetch curated cross-section data
+        shell: bash
+        run: python spikes/fetch_data.py data
+      - name: Build installer
+        shell: bash
+        run: |
+          export NBEAST_ARM64_CHANNEL="$HOME/arm64ch"
+          packaging/build_installer.sh osx-arm64
       - name: Attach installer to the Release
         uses: softprops/action-gh-release@v2
         with:

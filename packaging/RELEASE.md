@@ -17,7 +17,6 @@ Everything derives from this: the wheel filename, the installer version/name, an
 ```sh
 conda install -n base -c conda-forge constructor
 packaging/build_installer.sh osx-arm64    # native Apple Silicon
-packaging/build_installer.sh osx-64       # Intel / Rosetta
 packaging/build_installer.sh linux-64     # Linux (cross-builds from any host)
 ```
 

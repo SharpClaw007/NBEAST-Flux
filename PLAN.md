@@ -182,10 +182,11 @@ nodagmc/nompi variant from the feedstock recipe via rattler-build, patched to ig
 Homebrew's `/opt/homebrew` (which CMake otherwise links over conda's HDF5/fmt → undefined
 symbols). Verified: native arm64 import + Godiva k≈1.0, **no Rosetta**, and no mpich/
 FI_PROVIDER issue (it's nompi).
-**Both macOS installers built + validated:** osx-64 (Rosetta, 755 MB) and **native
-osx-arm64 (724 MB)** — each installs to a prefix, imports, and runs Godiva from the
-bundle; arm64 confirmed `Mach-O arm64` end to end (python + openmc executable). Version
-is single-sourced from `nbeast.__version__`.
+**macOS target is Apple Silicon only** — Intel/osx-64 was dropped (its CI runners
+starved). The native **osx-arm64 installer (724 MB)** is built + validated: installs to a
+prefix, imports, and runs Godiva from the bundle (`Mach-O arm64` end to end). **v0.0.1 is
+published** with the Linux + arm64 installers. Version is single-sourced from
+`nbeast.__version__`.
 Docs done: README (end-user install + usage) and `packaging/RELEASE.md` (one-line
 version bump → build → smoke-test → sign → publish).
 **Public repo live with green CI** (github.com/SharpClaw007/NBEAST-Flux). A release

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build a self-contained NBEAST installer with conda `constructor`.
 #
-#   ./build_installer.sh [platform]      # osx-64 (default) | osx-arm64 | linux-64
+#   ./build_installer.sh [platform]      # osx-arm64 (default) | linux-64
 #
 # The version comes from nbeast.__version__ (single source of truth); this script
 # generates construct.yaml from construct.yaml.in. For osx-arm64 it uses a local
@@ -13,7 +13,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 ENVBIN="${NBEAST_ENVBIN:-$HOME/miniforge3/envs/nbeast/bin}"
-PLATFORM="${1:-osx-64}"
+PLATFORM="${1:-osx-arm64}"
 mkdir -p "$HERE/dist"
 
 VERSION="$("$ENVBIN/python" -c 'import nbeast; print(nbeast.__version__)')"

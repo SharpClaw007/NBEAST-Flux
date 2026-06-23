@@ -133,7 +133,6 @@ Download the installer for your platform, run it, and launch — everything is b
 | Platform           | Installer                          |
 |--------------------|------------------------------------|
 | macOS (Apple Silicon) | `NBEAST-<version>-MacOSX-arm64.sh`  |
-| macOS (Intel)      | `NBEAST-<version>-MacOSX-x86_64.sh` |
 | Linux (x86-64)     | `NBEAST-<version>-Linux-x86_64.sh`  |
 
 ```sh
