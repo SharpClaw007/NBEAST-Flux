@@ -182,8 +182,13 @@ nodagmc/nompi variant from the feedstock recipe via rattler-build, patched to ig
 Homebrew's `/opt/homebrew` (which CMake otherwise links over conda's HDF5/fmt → undefined
 symbols). Verified: native arm64 import + Godiva k≈1.0, **no Rosetta**, and no mpich/
 FI_PROVIDER issue (it's nompi).
-Remaining: wire the arm64 channel into constructor → native arm64 installer; Linux
-installer in CI; macOS signing/notarization; in-app full-data download; docs; public release.
+**Both macOS installers built + validated:** osx-64 (Rosetta, 755 MB) and **native
+osx-arm64 (724 MB)** — each installs to a prefix, imports, and runs Godiva from the
+bundle; arm64 confirmed `Mach-O arm64` end to end (python + openmc executable). Version
+is single-sourced from `nbeast.__version__`.
+Remaining: Linux installer (via CI); in-app full-data download; docs; and the
+**account-gated finish** — macOS signing/notarization (Apple Developer ID) and the
+public release (a GitHub repo).
 
 - Polished installers (macOS signing/notarization decision; Linux AppImage); in-app full-data download
 - Docs/tutorials; public repo + license; build CI
