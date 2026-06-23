@@ -186,9 +186,12 @@ FI_PROVIDER issue (it's nompi).
 osx-arm64 (724 MB)** — each installs to a prefix, imports, and runs Godiva from the
 bundle; arm64 confirmed `Mach-O arm64` end to end (python + openmc executable). Version
 is single-sourced from `nbeast.__version__`.
-Remaining: Linux installer (via CI); in-app full-data download; docs; and the
-**account-gated finish** — macOS signing/notarization (Apple Developer ID) and the
-public release (a GitHub repo).
+Docs done: README (end-user install + usage) and `packaging/RELEASE.md` (one-line
+version bump → build → smoke-test → sign → publish).
+Remaining: **in-app full-data download** (the one outstanding v1 *feature*); Linux
+installer + a release CI workflow (land with the GitHub repo); and the **account-gated
+finish** — macOS signing/notarization (needs an Apple Developer ID) and the public
+release (needs a GitHub repo).
 
 - Polished installers (macOS signing/notarization decision; Linux AppImage); in-app full-data download
 - Docs/tutorials; public repo + license; build CI
