@@ -80,7 +80,7 @@ The GUI never runs transport in-process. Phase 0 Spike B validates the mechanics
 - macOS + Linux installers
 
 **OUT (explicitly deferred)**
-- Shielding / fixed-source; general CSG editor; CAD/DAGMC import
+- Shielding / fixed-source; general CSG editor; CAD/DAGMC import (CAD → **Phase 6**)
 - Depletion/burnup; variance reduction; multiphysics coupling
 - Windows; raw HDF5/VTK data export
 - Parameter sweeps / criticality search — strong **post-v1** candidate (the simple↔expert bridge)
@@ -166,6 +166,19 @@ a future tweak could add axial viz bounds.
 - Polished installers (macOS signing/notarization decision; Linux AppImage); in-app full-data download
 - Docs/tutorials; public repo + license; build CI
 - **Done when:** a stranger downloads, installs offline, and runs Godiva on macOS and Linux.
+
+### Phase 6 (v2) — Native arm64 DAGMC/MOAB + CAD geometry
+The CAD / custom-geometry track, out of v1 scope. CAD geometry in OpenMC needs
+**DAGMC**, which needs **MOAB** — and neither has a usable macOS-arm64 conda-forge
+build (the stalled upstream chain; this is the same dependency we deliberately
+dropped via the `nodagmc` build). So this is a ground-up effort, not a bolt-on:
+- Build **MOAB** from source for `osx-arm64` (and linux), bottom-up — our own
+  feedstock/CI, independent of the stalled upstream PRs.
+- Build **DAGMC** on that MOAB; produce a **dagmc-enabled OpenMC** build.
+- Add a **CAD import + meshing pipeline** (MOAB) and a **CAD geometry viewport**;
+  extend the engine/templates to a DAGMC geometry path.
+- **Done when:** a user can import a CAD model, mesh it, and run/visualise it
+  **natively on Apple Silicon**.
 
 ---
 

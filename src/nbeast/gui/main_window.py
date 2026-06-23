@@ -112,11 +112,6 @@ class MainWindow(QMainWindow):
         self.stop_action.triggered.connect(self.stop_run)
         tb.addAction(self.stop_action)
 
-        tb.addSeparator()
-        self.tracks_action = QAction("Show tracks", self)
-        self.tracks_action.triggered.connect(self.show_tracks)
-        tb.addAction(self.tracks_action)
-
     def _build_docks(self) -> None:
         self.model_tree = QTreeWidget()
         self.model_tree.setHeaderLabel("Model")
@@ -135,14 +130,16 @@ class MainWindow(QMainWindow):
 
         # Right dock: results field picker (enabled once a run finishes).
         self.results_list = QListWidget()
-        for label, score in (("Scalar flux", "flux"), ("Fission rate", "fission")):
+        for label, score in (
+            ("Scalar flux", "flux"),
+            ("Fission rate", "fission"),
+            ("Neutron tracks", "tracks"),
+        ):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, score)
             self.results_list.addItem(item)
         self.results_list.setEnabled(False)
-        self.results_list.itemClicked.connect(
-            lambda item: self._show_field(item.data(Qt.UserRole), switch_tab=True)
-        )
+        self.results_list.itemClicked.connect(self._on_results_clicked)
         results_dock = QDockWidget("Results", self)
         results_dock.setWidget(self.results_list)
         self.addDockWidget(Qt.RightDockWidgetArea, results_dock)
@@ -335,6 +332,13 @@ class MainWindow(QMainWindow):
                 self.tabs.setCurrentWidget(self.flux_view)
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
+
+    def _on_results_clicked(self, item) -> None:
+        score = item.data(Qt.UserRole)
+        if score == "tracks":
+            self.show_tracks()
+        else:
+            self._show_field(score, switch_tab=True)
 
     def show_tracks(self) -> None:
         """Generate a few neutron tracks and render them in the Flux-map tab."""
