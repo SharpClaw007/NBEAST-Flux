@@ -27,6 +27,7 @@ class Parameter:
     decimals: int = 3
     unit: str = ""
     group: str = "Geometry"  # tree group it belongs under: "Materials" | "Geometry"
+    kind: str = "float"      # "float" | "int" — picks the editor widget
 
 
 @dataclass(frozen=True)
@@ -77,4 +78,26 @@ GODIVA = TemplateSpec(
     geometry="Bare HEU sphere (vacuum BC)",
 )
 
-SPECS: dict[str, TemplateSpec] = {s.label: s for s in (PIN_CELL, GODIVA)}
+ASSEMBLY = TemplateSpec(
+    key="assembly",
+    label="Fuel assembly",
+    build=templates.assembly,
+    parameters=(
+        Parameter("n_side", "Pins per side", 5, 2, 17,
+                  step=1, kind="int", group="Geometry"),
+        Parameter("enrichment", "U-235 enrichment", 3.2, 0.1, 100.0,
+                  step=0.1, decimals=2, unit="wt%", group="Materials"),
+        Parameter("pitch", "Pin pitch", 1.26, 0.40, 5.0,
+                  step=0.01, decimals=3, unit="cm", group="Geometry"),
+        Parameter("fuel_radius", "Fuel radius", 0.39, 0.05, 2.0,
+                  step=0.01, decimals=3, unit="cm", group="Geometry"),
+        Parameter("clad_inner_radius", "Clad inner radius", 0.40, 0.05, 2.0,
+                  step=0.01, decimals=3, unit="cm", group="Geometry"),
+        Parameter("clad_outer_radius", "Clad outer radius", 0.46, 0.05, 2.0,
+                  step=0.01, decimals=3, unit="cm", group="Geometry"),
+    ),
+    materials=("UO₂ fuel", "Zircaloy", "Water"),
+    geometry="N×N PWR fuel assembly (reflective BCs)",
+)
+
+SPECS: dict[str, TemplateSpec] = {s.label: s for s in (PIN_CELL, GODIVA, ASSEMBLY)}

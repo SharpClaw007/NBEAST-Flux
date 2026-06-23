@@ -28,3 +28,8 @@ def godiva(radius: float = GODIVA_RADIUS, **kwargs) -> openmc.model.Model:
 def pincell(**kwargs) -> openmc.model.Model:
     """PWR UO2/water pin cell; k_inf ~= 1.41 at 3.2% enrichment."""
     return templates.pin_cell(**kwargs)
+
+
+def assembly(**kwargs) -> openmc.model.Model:
+    """N×N PWR fuel assembly (reflective); k_inf ~= the pin-cell value."""
+    return templates.assembly(**kwargs)

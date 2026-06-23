@@ -36,6 +36,22 @@ def test_godiva_critical(tmp_path, monkeypatch):
 
 
 @requires_data
+def test_assembly_reasonable(tmp_path, monkeypatch):
+    """A 3×3 reflective assembly has the same k_inf as a pin cell (~1.41)."""
+    import openmc
+
+    from nbeast.core import benchmarks
+
+    monkeypatch.chdir(tmp_path)
+    model = benchmarks.assembly(n_side=3, particles=1000, batches=60, inactive=20)
+    sp_path = model.run(output=False)
+    with openmc.StatePoint(sp_path) as sp:
+        k = sp.keff
+
+    assert 1.30 < k.nominal_value < 1.50, f"assembly k_inf out of range: {k}"
+
+
+@requires_data
 def test_pincell_reasonable(tmp_path, monkeypatch):
     """UO2/water pin cell k_inf lands in the expected PWR range (~1.41)."""
     import openmc

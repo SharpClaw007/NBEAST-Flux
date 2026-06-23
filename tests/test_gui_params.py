@@ -45,6 +45,25 @@ def test_geometry_click_shows_editors(qapp):
     win.close()
 
 
+def test_assembly_nside_editor_is_int(qapp):
+    """The assembly's 'pins per side' parameter uses an integer spin box."""
+    from PySide6.QtWidgets import QSpinBox
+
+    from nbeast.gui.main_window import MainWindow
+
+    win = MainWindow()
+    win.set_template("Fuel assembly")
+    geom = next(
+        win.model_tree.topLevelItem(i)
+        for i in range(win.model_tree.topLevelItemCount())
+        if win.model_tree.topLevelItem(i).text(0) == "Geometry"
+    )
+    win._on_tree_click(geom, 0)
+    editors = [win.properties.cellWidget(r, 1) for r in range(win.properties.rowCount())]
+    assert any(isinstance(e, QSpinBox) for e in editors), "n_side should be an int spin box"
+    win.close()
+
+
 def test_godiva_radius_param_changes_geometry(qapp):
     """Editing the Godiva radius changes the built geometry (data-free)."""
     from nbeast.gui.main_window import MainWindow

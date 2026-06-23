@@ -70,6 +70,56 @@ def pin_cell(
     return openmc.model.Model(geometry, openmc.Materials([fuel, clad, mod]), settings)
 
 
+def assembly(
+    n_side: int = 5,
+    enrichment: float = 3.2,
+    pitch: float = 1.26,
+    fuel_radius: float = 0.39,
+    clad_inner_radius: float = 0.40,
+    clad_outer_radius: float = 0.46,
+    batches: int = 100,
+    inactive: int = 20,
+    particles: int = 5000,
+) -> openmc.model.Model:
+    """An N×N square lattice of identical PWR pins, reflective boundaries."""
+    n_side = int(n_side)
+    fuel = materials.uo2(enrichment)
+    clad = materials.zircaloy()
+    mod = materials.water()
+
+    fuel_or = openmc.ZCylinder(r=fuel_radius)
+    clad_ir = openmc.ZCylinder(r=clad_inner_radius)
+    clad_or = openmc.ZCylinder(r=clad_outer_radius)
+    pin = openmc.Universe(cells=[
+        openmc.Cell(name="fuel", fill=fuel, region=-fuel_or),
+        openmc.Cell(name="gap", region=+fuel_or & -clad_ir),
+        openmc.Cell(name="clad", fill=clad, region=+clad_ir & -clad_or),
+        openmc.Cell(name="moderator", fill=mod, region=+clad_or),
+    ])
+    outer = openmc.Universe(cells=[openmc.Cell(fill=mod)])
+
+    half = n_side * pitch / 2.0
+    lattice = openmc.RectLattice()
+    lattice.lower_left = (-half, -half)
+    lattice.pitch = (pitch, pitch)
+    lattice.universes = [[pin] * n_side for _ in range(n_side)]
+    lattice.outer = outer
+
+    left = openmc.XPlane(-half, boundary_type="reflective")
+    right = openmc.XPlane(half, boundary_type="reflective")
+    bottom = openmc.YPlane(-half, boundary_type="reflective")
+    top = openmc.YPlane(half, boundary_type="reflective")
+    root = openmc.Cell(fill=lattice, region=+left & -right & +bottom & -top)
+
+    geometry = openmc.Geometry([root])
+    source = openmc.IndependentSource(
+        space=openmc.stats.Box((-half, -half, -1), (half, half, 1)),
+        constraints={"fissionable": True},
+    )
+    settings = _eigenvalue_settings(batches, inactive, particles, source)
+    return openmc.model.Model(geometry, openmc.Materials([fuel, clad, mod]), settings)
+
+
 def bare_sphere(
     material: openmc.Material,
     radius: float,

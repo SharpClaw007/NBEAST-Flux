@@ -176,6 +176,8 @@ class MainWindow(QMainWindow):
     def _value_text(self, param: specs.Parameter) -> str:
         value = self._param_values[self._template][param.key]
         unit = f" {param.unit}" if param.unit else ""
+        if param.kind == "int":
+            return f"{param.label} = {int(value)}{unit}"
         return f"{param.label} = {value:.{param.decimals}f}{unit}"
 
     def _refresh_tree(self) -> None:
@@ -219,11 +221,18 @@ class MainWindow(QMainWindow):
         for row, p in enumerate(params):
             label = f"{p.label} ({p.unit})" if p.unit else p.label
             self.properties.setItem(row, 0, QTableWidgetItem(label))
-            editor = QDoubleSpinBox()
-            editor.setRange(p.minimum, p.maximum)
-            editor.setSingleStep(p.step)
-            editor.setDecimals(p.decimals)
-            editor.setValue(self._param_values[self._template][p.key])
+            value = self._param_values[self._template][p.key]
+            if p.kind == "int":
+                editor = QSpinBox()
+                editor.setRange(int(p.minimum), int(p.maximum))
+                editor.setSingleStep(int(p.step))
+                editor.setValue(int(value))
+            else:
+                editor = QDoubleSpinBox()
+                editor.setRange(p.minimum, p.maximum)
+                editor.setSingleStep(p.step)
+                editor.setDecimals(p.decimals)
+                editor.setValue(value)
             editor.valueChanged.connect(lambda v, key=p.key: self.set_param(key, v))
             self.properties.setCellWidget(row, 1, editor)
 
