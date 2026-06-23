@@ -177,8 +177,13 @@ Done: **constructor installer pipeline** (`packaging/`) — bundles the env + nb
 (offline pip install, data unpack, launcher script). The osx-64 installer (755 MB,
 `nodagmc_nompi`) builds, installs to a prefix, imports, and runs Godiva (k=1.003) from the
 bundle — smoke test also caught/fixed conda defaulting to the DAGMC variant. MIT LICENSE added.
-Remaining: native osx-arm64 build (next) → arm64 installer; Linux installer in CI; macOS
-signing/notarization; in-app full-data download; docs; public release.
+Also done: **native osx-arm64 OpenMC build** (`packaging/openmc-arm64/`) — built the
+nodagmc/nompi variant from the feedstock recipe via rattler-build, patched to ignore
+Homebrew's `/opt/homebrew` (which CMake otherwise links over conda's HDF5/fmt → undefined
+symbols). Verified: native arm64 import + Godiva k≈1.0, **no Rosetta**, and no mpich/
+FI_PROVIDER issue (it's nompi).
+Remaining: wire the arm64 channel into constructor → native arm64 installer; Linux
+installer in CI; macOS signing/notarization; in-app full-data download; docs; public release.
 
 - Polished installers (macOS signing/notarization decision; Linux AppImage); in-app full-data download
 - Docs/tutorials; public repo + license; build CI
