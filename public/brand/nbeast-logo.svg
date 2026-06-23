@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="NBEAST logo">
+  <defs>
+    <linearGradient id="flux" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#440154"/>
+      <stop offset="0.55" stop-color="#21918c"/>
+      <stop offset="1" stop-color="#fde725"/>
+    </linearGradient>
+  </defs>
+  <!-- panel -->
+  <rect x="3" y="3" width="90" height="90" rx="20" fill="#0e1226"/>
+  <rect x="3" y="3" width="90" height="90" rx="20" fill="url(#flux)" opacity="0.16"/>
+  <!-- core sphere (criticality / pin) -->
+  <circle cx="48" cy="48" r="23" fill="none" stroke="url(#flux)" stroke-width="3.5"/>
+  <circle cx="48" cy="48" r="6.5" fill="#21918c"/>
+  <!-- scattering neutron track -->
+  <polyline points="14,70 33,55 29,41 47,40 45,26 65,31 62,19 82,24"
+            fill="none" stroke="#fde725" stroke-width="2.6"
+            stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- the neutron -->
+  <circle cx="82" cy="24" r="4.2" fill="#fde725"/>
+</svg>
