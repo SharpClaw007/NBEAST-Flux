@@ -3,8 +3,9 @@
 set -euo pipefail
 
 # 1. Install the NBEAST package offline (its deps are already in the env).
-"$PREFIX/bin/python" -m pip install --no-index --no-deps \
-    "$PREFIX/nbeast-0.0.1-py3-none-any.whl"
+#    Glob the wheel so the version isn't hardcoded here.
+WHEEL=$(ls "$PREFIX"/nbeast-*.whl)
+"$PREFIX/bin/python" -m pip install --no-index --no-deps "$WHEEL"
 
 # 2. Unpack the curated cross-section data (relative-path cross_sections.xml).
 mkdir -p "$PREFIX/share/nbeast"
@@ -20,4 +21,4 @@ EOF
 chmod +x "$PREFIX/bin/nbeast"
 
 # 4. Drop the bundled archives now that they're installed.
-rm -f "$PREFIX/nbeast-0.0.1-py3-none-any.whl" "$PREFIX/nbeast_data.tar.gz"
+rm -f "$WHEEL" "$PREFIX/nbeast_data.tar.gz"

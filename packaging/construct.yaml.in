@@ -1,0 +1,33 @@
+# Template for the constructor config — build_installer.sh substitutes @VERSION@
+# (from nbeast.__version__) and @EXTRA_CHANNEL@ (the local arm64 OpenMC channel,
+# empty for platforms that get OpenMC from conda-forge). The generated
+# construct.yaml is git-ignored.
+name: NBEAST
+version: "@VERSION@"
+installer_type: sh
+
+channels:
+@EXTRA_CHANNEL@
+  - conda-forge
+
+specs:
+  - python=3.12
+  - openmc=0.15.3=nodagmc_nompi_*   # no-DAGMC / no-MPI variant (arm64-portable)
+  - pyside6=6.11.1
+  - pyvista=0.48.4
+  - pyvistaqt=0.11.4
+  - pyqtgraph=0.14.0
+  - vtk=9.6.2
+  - numpy
+  - h5py
+  - scipy
+  - lxml
+  - matplotlib-base
+  - pip
+
+extra_files:
+  - dist/nbeast-@VERSION@-py3-none-any.whl
+  - dist/nbeast_data.tar.gz
+
+post_install: post_install.sh
+license_file: ../LICENSE

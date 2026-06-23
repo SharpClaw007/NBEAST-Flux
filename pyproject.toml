@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nbeast"
-version = "0.0.1"
+dynamic = ["version"]
 description = "An offline, open-source desktop GUI for neutron-flux Monte Carlo simulation, built on OpenMC"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,10 @@ test = ["pytest"]
 
 [project.gui-scripts]
 nbeast = "nbeast.gui.app:main"
+
+# Single source of truth: the version lives in src/nbeast/__init__.py.
+[tool.setuptools.dynamic]
+version = { attr = "nbeast.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
