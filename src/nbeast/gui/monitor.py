@@ -8,7 +8,14 @@ openmc.lib does not expose it directly — see docs/phase0-notes.md.)
 from __future__ import annotations
 
 import pyqtgraph as pg
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+
+_CAPTION = (
+    "k-effective is the neutron multiplication factor — k = 1 is exactly critical "
+    "(self-sustaining), k > 1 supercritical, k < 1 subcritical. It should settle to a "
+    "steady value as the run proceeds; the noisy first cycles are 'inactive' batches, "
+    "discarded while the fission source distribution converges."
+)
 
 
 class ConvergenceMonitor(QWidget):
@@ -25,6 +32,11 @@ class ConvergenceMonitor(QWidget):
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._curve = self._plot.plot([], [], pen=pg.mkPen(width=2), symbol="o", symbolSize=4)
         layout.addWidget(self._plot)
+
+        caption = QLabel(_CAPTION)
+        caption.setWordWrap(True)
+        caption.setStyleSheet("color: #555; padding: 4px;")
+        layout.addWidget(caption)
 
         self._batches: list[int] = []
         self._keffs: list[float] = []

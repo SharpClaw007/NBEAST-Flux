@@ -22,6 +22,16 @@ class FluxViewport(QWidget):
         self._placeholder = QLabel("Run a simulation to see the flux map here.")
         self._placeholder.setAlignment(Qt.AlignCenter)
         self._layout.addWidget(self._placeholder)
+
+        caption = QLabel(
+            "Spatial map of the selected field on a slice through the model. "
+            "Switch fields (scalar flux, fission rate, neutron tracks) in the Results "
+            "panel. Drag to rotate, scroll to zoom."
+        )
+        caption.setWordWrap(True)
+        caption.setStyleSheet("color: #555; padding: 4px;")
+        self._layout.addWidget(caption)
+
         self._interactor = None
         self._vtk_path: str | None = None
         self._scalar = "flux"
@@ -50,7 +60,7 @@ class FluxViewport(QWidget):
 
         if self._interactor is None:
             self._interactor = QtInteractor(self)
-            self._layout.addWidget(self._interactor)
+            self._layout.insertWidget(0, self._interactor)  # above the caption
             self._placeholder.hide()
         return self._interactor
 
@@ -80,21 +90,16 @@ class FluxViewport(QWidget):
             self._placeholder.setText(f"{self._title}: 3D view unavailable in headless mode.")
             return
         try:
-            from pyvistaqt import QtInteractor
-
             from .render import flat_flux_surface
 
-            if self._interactor is None:
-                self._interactor = QtInteractor(self)
-                self._layout.addWidget(self._interactor)
-                self._placeholder.hide()
+            interactor = self._ensure_interactor()
             surface = flat_flux_surface(self._vtk_path)
-            self._interactor.clear()
-            self._interactor.add_mesh(surface, scalars=self._scalar, cmap="viridis", show_edges=False)
-            self._interactor.add_text(self._title, font_size=10, name="title")
-            self._interactor.enable_parallel_projection()
-            self._interactor.view_xy()
-            self._interactor.reset_camera()
+            interactor.clear()
+            interactor.add_mesh(surface, scalars=self._scalar, cmap="viridis", show_edges=False)
+            interactor.add_text(self._title, font_size=10, name="title")
+            interactor.enable_parallel_projection()
+            interactor.view_xy()
+            interactor.reset_camera()
         except Exception as exc:  # noqa: BLE001 — never let viz kill the app
             self._placeholder.show()
             self._placeholder.setText(f"3D view error: {exc}")

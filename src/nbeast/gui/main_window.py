@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(QLabel(" Template: "))
         self.template_combo = QComboBox()
         self.template_combo.addItems(specs.SPECS.keys())
+        self.template_combo.setToolTip("Choose the reactor model to simulate.")
         self.template_combo.currentTextChanged.connect(self.set_template)
         tb.addWidget(self.template_combo)
 
@@ -100,6 +101,10 @@ class MainWindow(QMainWindow):
         self.batches_spin = QSpinBox()
         self.batches_spin.setRange(10, 100_000)
         self.batches_spin.setValue(100)
+        self.batches_spin.setToolTip(
+            "Monte Carlo batches (statistical samples). More batches → lower "
+            "uncertainty but longer runtime. Early 'inactive' batches are discarded."
+        )
         self.batches_spin.valueChanged.connect(lambda _: self._refresh_tree())
         tb.addWidget(self.batches_spin)
 
@@ -108,21 +113,31 @@ class MainWindow(QMainWindow):
         self.particles_spin.setRange(100, 10_000_000)
         self.particles_spin.setSingleStep(1000)
         self.particles_spin.setValue(2000)
+        self.particles_spin.setToolTip(
+            "Neutrons simulated per batch. More → smoother flux/spectrum maps, "
+            "longer runtime."
+        )
         self.particles_spin.valueChanged.connect(lambda _: self._refresh_tree())
         tb.addWidget(self.particles_spin)
 
         tb.addSeparator()
         self.run_action = QAction("Run", self)
+        self.run_action.setToolTip("Run the k-effective (criticality) simulation.")
         self.run_action.triggered.connect(self.start_run)
         tb.addAction(self.run_action)
         self.stop_action = QAction("Stop", self)
         self.stop_action.setEnabled(False)
+        self.stop_action.setToolTip("Stop the running simulation (keeps results so far).")
         self.stop_action.triggered.connect(self.stop_run)
         tb.addAction(self.stop_action)
 
     def _build_docks(self) -> None:
         self.model_tree = QTreeWidget()
         self.model_tree.setHeaderLabel("Model")
+        self.model_tree.setToolTip(
+            "The model being simulated. Click a group (Materials / Geometry) to edit "
+            "its parameters in the Properties panel below."
+        )
         self.model_tree.itemClicked.connect(self._on_tree_click)
         model_dock = QDockWidget("Model", self)
         model_dock.setWidget(self.model_tree)
@@ -147,6 +162,10 @@ class MainWindow(QMainWindow):
             item.setData(Qt.UserRole, score)
             self.results_list.addItem(item)
         self.results_list.setEnabled(False)
+        self.results_list.setToolTip(
+            "Pick a result to view: scalar flux, fission rate, or neutron tracks "
+            "(available after a run)."
+        )
         self.results_list.itemClicked.connect(self._on_results_clicked)
         results_dock = QDockWidget("Results", self)
         results_dock.setWidget(self.results_list)

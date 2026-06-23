@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+
+_CAPTION = (
+    "Neutron flux vs energy, plotted per unit lethargy (so equal areas mean equal "
+    "neutron populations). A thermal reactor shows three features: a thermal peak "
+    "(~0.025 eV, left), a flat 1/E slowing-down region in the middle, and a fast "
+    "fission peak (~1 MeV, right)."
+)
 
 
 class SpectrumView(QWidget):
@@ -22,6 +29,11 @@ class SpectrumView(QWidget):
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._curve = self._plot.plot([], [], pen=pg.mkPen(width=2))
         layout.addWidget(self._plot)
+
+        caption = QLabel(_CAPTION)
+        caption.setWordWrap(True)
+        caption.setStyleSheet("color: #555; padding: 4px;")
+        layout.addWidget(caption)
 
         self._has_data = False
 
