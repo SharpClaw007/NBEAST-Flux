@@ -157,11 +157,15 @@ a future tweak could add axial viz bounds.
 - 3D geometry render; flux/fission mesh-tally overlay with toggleable results tree; spectrum; particle tracks
 - **Done when:** results viewports deliver the Caedium-style multi-pane experience.
 
-### Phase 4 — Content + export + polish  ◐ IN PROGRESS (2026-06-23)
-Done: **fuel assembly template** (N×N RectLattice, reflective) + **integer parameters**
-in the editor (pins-per-side QSpinBox); a 7×7 fission map cleanly resolves the pins.
-18 tests pass. Remaining: report export, one-click tutorials, materials expansion,
-simple/advanced toggle.
+### Phase 4 — Content + export + polish  ✅ COMPLETE (2026-06-23)
+- **Fuel assembly template** (N×N RectLattice) + **integer parameters** (pins-per-side).
+- **Report export** (File ▸ Export…): one-page PDF/PNG report + spectrum CSV + reproducible deck.
+- **In-app explanatory layer**: plain-language captions under every result view + tooltips on all controls.
+- **Simple / Advanced mode**: Simple = one Quality preset (Quick/Standard/High); Advanced = raw batches/particles.
+- **Example presets** (Examples menu): Godiva / pin cell / 7×7 assembly with good defaults + expected-k hints.
+- Deferred: materials-library expansion — low value until there's a material-assignment UI (and it needs
+  more bundled nuclides); revisit alongside a future material picker.
+21 tests pass.
 
 - Assembly template; materials library expansion; 3 validated examples as one-click tutorials
 - Report export; simple/advanced settings toggle; smart defaults

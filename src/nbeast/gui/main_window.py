@@ -16,6 +16,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDockWidget,
     QDoubleSpinBox,
@@ -83,6 +84,35 @@ class MainWindow(QMainWindow):
         export_action.triggered.connect(self._on_export)
         file_menu.addAction(export_action)
 
+        examples_menu = self.menuBar().addMenu("&Examples")
+        for label, key in (
+            ("Godiva — bare HEU sphere (k ≈ 1.0)", "godiva"),
+            ("PWR pin cell (k∞ ≈ 1.41)", "pincell"),
+            ("7×7 PWR fuel assembly", "assembly"),
+        ):
+            action = QAction(label, self)
+            action.triggered.connect(lambda _checked=False, k=key: self.load_example(k))
+            examples_menu.addAction(action)
+
+    # Curated starting points: (template, param overrides, quality, status hint).
+    _EXAMPLES = {
+        "godiva": ("Godiva", {}, "High", "Godiva benchmark — expect k ≈ 1.0 (critical)."),
+        "pincell": ("Pin cell", {}, "Standard", "PWR pin cell — expect k∞ ≈ 1.41."),
+        "assembly": ("Fuel assembly", {"n_side": 7}, "Standard",
+                     "7×7 PWR fuel assembly — expect k∞ ≈ 1.41."),
+    }
+
+    def load_example(self, key: str) -> None:
+        template, overrides, quality, hint = self._EXAMPLES[key]
+        self.set_template(template)
+        values = self.spec.defaults()
+        values.update(overrides)
+        self._param_values[template] = values
+        self.quality_combo.setCurrentText(quality)
+        self._apply_quality(quality)
+        self._refresh_tree()
+        self.statusBar().showMessage(hint)
+
     # ---- construction -----------------------------------------------------
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
@@ -97,7 +127,20 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.template_combo)
 
         tb.addSeparator()
-        tb.addWidget(QLabel(" Batches: "))
+
+        # Simple mode: one quality preset (sets batches + particles).
+        self._quality_label_act = tb.addWidget(QLabel(" Quality: "))
+        self.quality_combo = QComboBox()
+        self.quality_combo.addItems(["Quick", "Standard", "High"])
+        self.quality_combo.setCurrentText("Standard")
+        self.quality_combo.setToolTip(
+            "Run-quality preset (sets batches & particles). Switch on Advanced for full control."
+        )
+        self.quality_combo.currentTextChanged.connect(self._apply_quality)
+        self._quality_combo_act = tb.addWidget(self.quality_combo)
+
+        # Advanced mode: raw run settings.
+        self._batches_label_act = tb.addWidget(QLabel(" Batches: "))
         self.batches_spin = QSpinBox()
         self.batches_spin.setRange(10, 100_000)
         self.batches_spin.setValue(100)
@@ -106,9 +149,9 @@ class MainWindow(QMainWindow):
             "uncertainty but longer runtime. Early 'inactive' batches are discarded."
         )
         self.batches_spin.valueChanged.connect(lambda _: self._refresh_tree())
-        tb.addWidget(self.batches_spin)
+        self._batches_act = tb.addWidget(self.batches_spin)
 
-        tb.addWidget(QLabel(" Particles/batch: "))
+        self._particles_label_act = tb.addWidget(QLabel(" Particles/batch: "))
         self.particles_spin = QSpinBox()
         self.particles_spin.setRange(100, 10_000_000)
         self.particles_spin.setSingleStep(1000)
@@ -118,7 +161,7 @@ class MainWindow(QMainWindow):
             "longer runtime."
         )
         self.particles_spin.valueChanged.connect(lambda _: self._refresh_tree())
-        tb.addWidget(self.particles_spin)
+        self._particles_act = tb.addWidget(self.particles_spin)
 
         tb.addSeparator()
         self.run_action = QAction("Run", self)
@@ -130,6 +173,29 @@ class MainWindow(QMainWindow):
         self.stop_action.setToolTip("Stop the running simulation (keeps results so far).")
         self.stop_action.triggered.connect(self.stop_run)
         tb.addAction(self.stop_action)
+
+        tb.addSeparator()
+        self.advanced_check = QCheckBox("Advanced")
+        self.advanced_check.setToolTip("Show expert run settings (batches, particles per batch).")
+        self.advanced_check.toggled.connect(self._set_advanced)
+        tb.addWidget(self.advanced_check)
+
+        self._apply_quality("Standard")
+        self._set_advanced(False)
+
+    def _apply_quality(self, name: str) -> None:
+        presets = {"Quick": (50, 1000), "Standard": (100, 2000), "High": (200, 5000)}
+        batches, particles = presets.get(name, (100, 2000))
+        self.batches_spin.setValue(batches)
+        self.particles_spin.setValue(particles)
+
+    def _set_advanced(self, advanced: bool) -> None:
+        self._advanced = advanced
+        for act in (self._batches_label_act, self._batches_act,
+                    self._particles_label_act, self._particles_act):
+            act.setVisible(advanced)
+        for act in (self._quality_label_act, self._quality_combo_act):
+            act.setVisible(not advanced)
 
     def _build_docks(self) -> None:
         self.model_tree = QTreeWidget()

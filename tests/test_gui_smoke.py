@@ -48,6 +48,36 @@ def test_mainwindow_constructs(qapp):
     win.close()
 
 
+def test_simple_advanced_toggle(qapp):
+    """Simple mode uses a quality preset; Advanced exposes raw settings."""
+    from nbeast.gui.main_window import MainWindow
+
+    win = MainWindow()
+    assert win._advanced is False
+    win.quality_combo.setCurrentText("High")
+    assert win.batches_spin.value() == 200
+    assert win.particles_spin.value() == 5000
+
+    win.advanced_check.setChecked(True)
+    assert win._advanced is True
+    win.close()
+
+
+def test_load_example_presets(qapp):
+    """Example presets set the template, params, and a status hint."""
+    from nbeast.gui.main_window import MainWindow
+
+    win = MainWindow()
+    win.load_example("assembly")
+    assert win._template == "Fuel assembly"
+    assert win._param_values["Fuel assembly"]["n_side"] == 7
+    assert "assembly" in win.statusBar().currentMessage().lower()
+
+    win.load_example("godiva")
+    assert win._template == "Godiva"
+    win.close()
+
+
 @requires_data
 def test_run_streams_to_monitor(qapp, tmp_path):
     """A short Godiva run streams batches into the monitor and yields a k-eff."""
