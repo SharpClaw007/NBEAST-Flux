@@ -11,6 +11,7 @@ An offline, open-source desktop GUI for neutron-transport Monte Carlo, built on
 converge live, and explore flux, fission, spectra, and neutron tracks — simple enough for
 students, deep enough for experts.
 
+[![CI](https://github.com/SharpClaw007/NBEAST-Flux/actions/workflows/ci.yml/badge.svg)](https://github.com/SharpClaw007/NBEAST-Flux/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![OpenMC](https://img.shields.io/badge/OpenMC-0.15-1f6feb)](https://openmc.org/)
 [![PySide6](https://img.shields.io/badge/PySide6-Qt-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython/)
