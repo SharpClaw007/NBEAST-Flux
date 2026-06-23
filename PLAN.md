@@ -213,6 +213,12 @@ dropped via the `nodagmc` build). So this is a ground-up effort, not a bolt-on:
 - **Done when:** a user can import a CAD model, mesh it, and run/visualise it
   **natively on Apple Silicon**.
 
+**Kickoff task (PARKED until v1 ships):** native `osx-arm64` **MOAB** build via
+rattler-build from the `moab-feedstock` — the same "restrict the feedstock recipe to
+one variant and fix the Homebrew/CMake prefix leak" approach that worked for OpenMC.
+MOAB is the first domino (DAGMC → dagmc-OpenMC → CAD UI follow). Detailed implementation
+plan to be written separately; not started.
+
 ---
 
 ## Decisions
