@@ -171,7 +171,15 @@ a future tweak could add axial viz bounds.
 - Report export; simple/advanced settings toggle; smart defaults
 - **Done when:** a new user goes launch → validated assembly result → exported report + deck, no docs.
 
-### Phase 5 — Release engineering
+### Phase 5 — Release engineering  ◐ IN PROGRESS (2026-06-23)
+Done: **constructor installer pipeline** (`packaging/`) — bundles the env + nbeast wheel +
+254 MB curated data (relative-path `cross_sections.xml`) via `extra_files` + `post_install`
+(offline pip install, data unpack, launcher script). The osx-64 installer (755 MB,
+`nodagmc_nompi`) builds, installs to a prefix, imports, and runs Godiva (k=1.003) from the
+bundle — smoke test also caught/fixed conda defaulting to the DAGMC variant. MIT LICENSE added.
+Remaining: native osx-arm64 build (next) → arm64 installer; Linux installer in CI; macOS
+signing/notarization; in-app full-data download; docs; public release.
+
 - Polished installers (macOS signing/notarization decision; Linux AppImage); in-app full-data download
 - Docs/tutorials; public repo + license; build CI
 - **Done when:** a stranger downloads, installs offline, and runs Godiva on macOS and Linux.

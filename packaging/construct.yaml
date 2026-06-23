@@ -1,0 +1,40 @@
+# NBEAST offline installer (conda `constructor`).
+#
+# Bundles a full Python env (OpenMC + GUI stack) plus the nbeast package and a
+# curated cross-section dataset, producing a self-contained offline installer.
+#
+# Build (see build_installer.sh):
+#   constructor packaging/ --platform osx-64   # or linux-64
+#
+# NOTE: osx-arm64 is intentionally absent here — OpenMC has no arm64 conda-forge
+# build yet. Native Apple Silicon installers wait on the Phase 6 / arm64 build.
+name: NBEAST
+version: 0.0.1
+installer_type: sh
+
+channels:
+  - conda-forge
+
+specs:
+  - python=3.12
+  - openmc=0.15.3=nodagmc_nompi_*   # pin the no-DAGMC / no-MPI variant (smaller; arm64-portable)
+  - pyside6=6.11.1
+  - pyvista=0.48.4
+  - pyvistaqt=0.11.4
+  - pyqtgraph=0.14.0
+  - vtk=9.6.2
+  - numpy
+  - h5py
+  - scipy
+  - lxml
+  - matplotlib-base
+  - pip
+
+# nbeast itself + the curated data are bundled (not conda packages); post_install
+# wires them in. Paths are relative to this construct.yaml.
+extra_files:
+  - dist/nbeast-0.0.1-py3-none-any.whl
+  - dist/nbeast_data.tar.gz
+
+post_install: post_install.sh
+license_file: ../LICENSE
