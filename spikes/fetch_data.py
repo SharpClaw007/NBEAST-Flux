@@ -21,6 +21,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 
 from openmc.data import DataLibrary
 
@@ -38,7 +39,17 @@ SAB_LIB = "ENDFB-7.1-NNDC"  # 8.0 sab assets are 404; 7.1 works
 
 
 def _dl(*args: str) -> None:
-    subprocess.run(["openmc_data_downloader", *args], check=True)
+    # The per-nuclide download host is flaky (404s, connection resets); retry with
+    # backoff. --no-overwrite means each retry resumes where the last left off.
+    last: Exception | None = None
+    for attempt in range(5):
+        try:
+            subprocess.run(["openmc_data_downloader", *args], check=True)
+            return
+        except subprocess.CalledProcessError as exc:
+            last = exc
+            time.sleep(5 * (attempt + 1))
+    raise RuntimeError(f"data download failed after 5 attempts: {last}")
 
 
 def build(dest: pathlib.Path) -> pathlib.Path:

@@ -38,6 +38,13 @@ jobs:
       - name: Install package + data downloader
         run: pip install -e . openmc_data_downloader==0.6.1
 
+      # Cache the curated data so most runs skip the (flaky) per-nuclide downloads.
+      - name: Cache cross-section data
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: nbeast-xs-data-${{ hashFiles('spikes/fetch_data.py') }}
+
       - name: Fetch curated cross-section data
         run: python spikes/fetch_data.py data
 
