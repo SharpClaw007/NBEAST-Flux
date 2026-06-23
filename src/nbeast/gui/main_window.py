@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
     QDoubleSpinBox,
+    QFileDialog,
     QHeaderView,
     QLabel,
     QListWidget,
@@ -69,11 +70,18 @@ class MainWindow(QMainWindow):
         self.controller.finished.connect(self._on_finished)
         self.controller.failed.connect(self._on_failed)
 
+        self._build_menu()
         self._build_toolbar()
         self._build_docks()
         self._build_central()
         self.statusBar().showMessage("Ready")
         self._refresh_tree()
+
+    def _build_menu(self) -> None:
+        file_menu = self.menuBar().addMenu("&File")
+        export_action = QAction("Export report…", self)
+        export_action.triggered.connect(self._on_export)
+        file_menu.addAction(export_action)
 
     # ---- construction -----------------------------------------------------
     def _build_toolbar(self) -> None:
@@ -373,6 +381,46 @@ class MainWindow(QMainWindow):
         self.run_action.setEnabled(True)
         self.stop_action.setEnabled(False)
         self.statusBar().showMessage(f"Error: {message}")
+
+    def _on_export(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, "Export report to folder…")
+        if directory:
+            self.export_report(directory)
+
+    def export_report(self, out_dir):
+        """Write the OpenMC deck + a PDF/PNG report + spectrum CSV to out_dir."""
+        from nbeast.core import export
+        from nbeast.gui import report
+
+        out_dir = Path(out_dir)
+        if not (self.last_result and self._statepoint):
+            self.statusBar().showMessage("Run a simulation before exporting a report.")
+            return None
+
+        export.export_deck(self._build_model(), out_dir / "openmc_deck")
+
+        values = self._param_values[self._template]
+        lines = [
+            f"k-effective = {self.last_result.keff:.5f} +/- {self.last_result.keff_std:.5f}",
+            "",
+            "Parameters:",
+        ]
+        for param in self.spec.parameters:
+            value = values[param.key]
+            text = f"{int(value)}" if param.kind == "int" else f"{value:.{param.decimals}f}"
+            lines.append(f"  {param.label} = {text} {param.unit}".rstrip())
+        lines.append(f"  batches = {self.batches_spin.value()}")
+        lines.append(f"  particles/batch = {self.particles_spin.value()}")
+
+        report.write_report(
+            out_dir,
+            title=f"Template: {self._template}",
+            summary_lines=lines,
+            result=self.last_result,
+            statepoint=self._statepoint,
+        )
+        self.statusBar().showMessage(f"Report exported to {out_dir}")
+        return out_dir
 
     def closeEvent(self, event) -> None:
         # Don't leave an OpenMC worker subprocess running after the window closes.
