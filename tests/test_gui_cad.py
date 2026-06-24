@@ -28,6 +28,7 @@ def test_dialog_constructs_and_populates(qapp):
     dialog._on_inspected(2)
     assert dialog.table.rowCount() == 2
     assert dialog.run_btn.isEnabled()
+    assert dialog.preview_btn.isEnabled()
 
     combo = dialog.table.cellWidget(0, 1)
     assert combo.count() == len(cad.MATERIAL_PRESETS)

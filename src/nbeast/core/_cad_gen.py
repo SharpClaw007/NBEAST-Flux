@@ -6,6 +6,7 @@ imported in the nbeast env. Reads a JSON job on stdin, prints a RESULT: line.
 """
 
 import json
+import os
 import sys
 
 
@@ -19,6 +20,17 @@ def main() -> None:
         result = cq.importers.importStep(job["step"])
         n = len(result.solids().vals())
         print("RESULT:" + json.dumps({"n_solids": n}))
+
+    elif mode == "tessellate":
+        import cadquery as cq
+
+        result = cq.importers.importStep(job["step"])
+        stls = []
+        for i, solid in enumerate(result.solids().vals()):
+            path = os.path.join(job["out_dir"], f"solid_{i}.stl")
+            cq.exporters.export(cq.Workplane(obj=solid), path, exportType="STL")
+            stls.append(path)
+        print("RESULT:" + json.dumps({"stls": stls}))
 
     elif mode == "generate":
         from cad_to_dagmc import CadToDagmc

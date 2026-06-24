@@ -495,7 +495,13 @@ class MainWindow(QMainWindow):
                 f"CAD run: k-eff = {res['keff']:.4f} ± {res['keff_std']:.4f}"
             )
         )
+        dialog.preview.connect(self._show_cad_preview)
         dialog.exec()
+
+    def _show_cad_preview(self, stls, colors) -> None:
+        """Render imported CAD solids (coloured by material) in the 3D viewport."""
+        self.flux_view.show_cad(stls, colors, title="CAD geometry")
+        self.tabs.setCurrentWidget(self.flux_view)
 
     def set_active_library(self, path: str) -> None:
         """Make a downloaded library the active one for model building + runs."""

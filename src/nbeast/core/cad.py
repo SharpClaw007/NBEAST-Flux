@@ -29,7 +29,7 @@ _RUN = _HERE / "_cad_run.py"
 # material name). Compositions use nuclides present in the curated bundled data.
 MATERIAL_PRESETS: dict[str, dict] = {
     "heu": {
-        "label": "HEU metal (Godiva)", "density": 18.74,
+        "label": "HEU metal (Godiva)", "density": 18.74, "color": "#c9a227",
         "nuclides": [
             {"nuclide": "U235", "fraction": 0.9371},
             {"nuclide": "U238", "fraction": 0.0527},
@@ -37,7 +37,7 @@ MATERIAL_PRESETS: dict[str, dict] = {
         ],
     },
     "uo2": {
-        "label": "UO₂ (3% enriched)", "density": 10.5,
+        "label": "UO₂ (3% enriched)", "density": 10.5, "color": "#6b8e23",
         "nuclides": [
             {"nuclide": "U235", "fraction": 0.0264},
             {"nuclide": "U238", "fraction": 0.8549},
@@ -45,14 +45,14 @@ MATERIAL_PRESETS: dict[str, dict] = {
         ],
     },
     "water": {
-        "label": "Water", "density": 1.0,
+        "label": "Water", "density": 1.0, "color": "#7fb8d8",
         "nuclides": [
             {"nuclide": "H1", "fraction": 0.1119},
             {"nuclide": "O16", "fraction": 0.8881},
         ],
     },
     "zirc": {
-        "label": "Zircaloy", "density": 6.55,
+        "label": "Zircaloy", "density": 6.55, "color": "#9aa0a6",
         "nuclides": [
             {"nuclide": "Zr90", "fraction": 0.5},
             {"nuclide": "Zr92", "fraction": 0.5},
@@ -120,6 +120,15 @@ def inspect_step(step_path) -> int:
     if cad_python() is None:
         raise RuntimeError("CAD env not available")
     return _run_json(cad_python(), _GEN, {"mode": "inspect", "step": str(step_path)})["n_solids"]
+
+
+def tessellate(step_path, out_dir) -> list[str]:
+    """Export each solid of a STEP file to an STL for 3D preview. Returns the paths."""
+    if cad_python() is None:
+        raise RuntimeError("CAD env not available")
+    os.makedirs(out_dir, exist_ok=True)
+    payload = {"mode": "tessellate", "step": str(step_path), "out_dir": str(out_dir)}
+    return _run_json(cad_python(), _GEN, payload)["stls"]
 
 
 def generate_h5m(step_path, material_tags, out_path,

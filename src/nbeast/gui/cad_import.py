@@ -48,7 +48,8 @@ class _Worker(QObject):
 
 
 class CadImportDialog(QDialog):
-    completed = Signal(dict)  # {keff, keff_std, h5m}
+    completed = Signal(dict)        # {keff, keff_std, h5m}
+    preview = Signal(list, list)    # (stl_paths, colors) -> render in the 3D viewport
 
     def __init__(self, cross_sections: str | None = None, parent=None):
         super().__init__(parent)
@@ -102,6 +103,10 @@ class CadImportDialog(QDialog):
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
+        self.preview_btn = QPushButton("Preview 3D")
+        self.preview_btn.setEnabled(False)
+        self.preview_btn.clicked.connect(self._preview)
+        buttons.addWidget(self.preview_btn)
         self.run_btn = QPushButton("Generate && run")
         self.run_btn.setEnabled(False)
         self.run_btn.clicked.connect(self._run)
@@ -124,8 +129,10 @@ class CadImportDialog(QDialog):
         return combo
 
     def _set_busy(self, busy: bool, message: str) -> None:
+        has_solids = self.table.rowCount() > 0
         self.inspect_btn.setEnabled(not busy)
-        self.run_btn.setEnabled(not busy and self.table.rowCount() > 0)
+        self.preview_btn.setEnabled(not busy and has_solids)
+        self.run_btn.setEnabled(not busy and has_solids)
         self.status.setText(message)
 
     def _start(self, fn, on_done) -> None:
@@ -160,6 +167,21 @@ class CadImportDialog(QDialog):
             self.table.setItem(i, 0, QTableWidgetItem(f"Solid {i}"))
             self.table.setCellWidget(i, 1, self._material_combo())
         self._set_busy(False, f"{n_solids} solid(s) found — assign materials, then Generate & run.")
+
+    # ---- 3D preview ------------------------------------------------------
+    def _preview(self) -> None:
+        path = self.step_edit.text().strip()
+        tags = [self.table.cellWidget(i, 1).currentData() for i in range(self.table.rowCount())]
+        out_dir = tempfile.mkdtemp(prefix="nbeast_cad_prev_")
+        self._set_busy(True, "Tessellating geometry for the 3D preview…")
+        self._start(lambda: cad.tessellate(path, out_dir), lambda stls: self._on_preview(stls, tags))
+
+    @Slot(object)
+    def _on_preview(self, stls, tags) -> None:
+        self._teardown()
+        colors = [cad.MATERIAL_PRESETS[t]["color"] for t in tags]
+        self._set_busy(False, f"Previewing {len(stls)} solid(s) — coloured by material.")
+        self.preview.emit(list(stls), colors)
 
     # ---- generate + run --------------------------------------------------
     def _run(self) -> None:

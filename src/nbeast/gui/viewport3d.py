@@ -55,6 +55,29 @@ class FluxViewport(QWidget):
         self._title = title
         self._render_tracks()
 
+    def show_cad(self, stl_paths, colors=None, title: str = "CAD geometry") -> None:
+        """Render imported CAD solids (per-solid STLs), coloured by material."""
+        self._vtk_path = None
+        self._tracks = None
+        self._title = title
+        if self._headless():
+            self._placeholder.setText(f"{title}: 3D view unavailable in headless mode.")
+            return
+        try:
+            import pyvista as pv
+
+            interactor = self._ensure_interactor()
+            interactor.clear()
+            for i, path in enumerate(stl_paths):
+                color = colors[i] if colors and i < len(colors) else None
+                interactor.add_mesh(pv.read(path), color=color, show_edges=True, opacity=0.6)
+            interactor.add_text(title, font_size=10, name="title")
+            interactor.view_isometric()
+            interactor.reset_camera()
+        except Exception as exc:  # noqa: BLE001 — never let viz kill the app
+            self._placeholder.show()
+            self._placeholder.setText(f"3D view error: {exc}")
+
     def _ensure_interactor(self):
         from pyvistaqt import QtInteractor
 
