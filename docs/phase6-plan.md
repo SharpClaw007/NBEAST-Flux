@@ -30,15 +30,20 @@ Each stage below reuses that playbook.
 
 ## Stages
 
-### Stage A — Native arm64 MOAB  *(the first task; gates everything)*
-- Read the `conda-forge/moab-feedstock` recipe + the open arm64 work order (issue #87):
-  migrate to the v1 recipe format, **remove statically-linked libraries**, add the
-  arm64 target.
-- Build MOAB for `osx-arm64` via rattler-build, single variant, Homebrew-prefix fix.
-  Deps (HDF5, eigen, optionally netcdf/metis) are all on conda-forge arm64.
-- **Done when:** `pymoab` imports natively (arm64) and basic mesh ops work.
-- **Risk:** highest of the chain — MOAB's static-lib/recipe issues are why upstream
-  stalled. Optionally upstream the arm64 build to the feedstock.
+### Stage A — Native arm64 MOAB  ✅ DONE
+**Built + validated** — see [`../packaging/moab-arm64/`](../packaging/moab-arm64/).
+Findings that re-shaped this stage and the ones after:
+- The **MOAB C++ library already ships for `osx-arm64`** on conda-forge (5.6.0) — so
+  Stages B/C (which link the library) are already unblocked; no library rebuild needed.
+- The only true gap was **pymoab** (Python bindings; conda-forge builds it nowhere).
+  The MOAB release tarball ships only a **deprecated, broken** autotools pymoab path
+  (references `paths.py` but never generates it), and `moab` isn't on PyPI.
+- The fix: build from the **git repo via scikit-build-core** — it has the root
+  `pyproject.toml` + `paths.py` and yields a self-contained `MOAB` wheel that bundles
+  `libMOAB` under `pymoab/core/`. Built natively with the OpenMC-style Homebrew guard
+  (`CMAKE_IGNORE_PREFIX_PATH=/opt/homebrew`).
+- **Validated:** native `arm64` `import pymoab`, Mach-O arm64 `core.so` + bundled
+  `libMOAB.dylib`, and an `.h5m` write/read round-trip.
 
 ### Stage B — Native arm64 DAGMC
 - Build DAGMC for `osx-arm64` from `dagmc-feedstock` on the Stage-A MOAB.

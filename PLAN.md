@@ -218,12 +218,15 @@ dropped via the `nodagmc` build). So this is a ground-up effort, not a bolt-on:
 - **Done when:** a user can import a CAD model, mesh it, and run/visualise it
   **natively on Apple Silicon**.
 
-**Kickoff task (PARKED until v1 ships):** native `osx-arm64` **MOAB** build via
-rattler-build from the `moab-feedstock` — the same "restrict the feedstock recipe to
-one variant and fix the Homebrew/CMake prefix leak" approach that worked for OpenMC.
-MOAB is the first domino (DAGMC → dagmc-OpenMC → CAD UI follow). **Detailed implementation
-plan: [`docs/phase6-plan.md`](docs/phase6-plan.md)** (stages A–F, effort/risk, kickoff).
-Not started.
+**Detailed implementation plan: [`docs/phase6-plan.md`](docs/phase6-plan.md)** (stages
+A–F, effort/risk).
+
+**Stage A — native arm64 MOAB + pymoab: ✅ DONE** (`packaging/moab-arm64/`). Recon
+re-shaped the chain: the **MOAB library already ships for `osx-arm64`** (conda-forge), so
+Stages B/C are pre-unblocked; the only gap was **pymoab**, whose release-tarball autotools
+build is broken (no `paths.py`). Built it from the **git repo via scikit-build-core** (a
+self-contained `MOAB` wheel) and validated natively: `import pymoab`, Mach-O arm64
+binaries, `.h5m` round-trip. **Stages B–F remain parked** until otherwise directed.
 
 ---
 
