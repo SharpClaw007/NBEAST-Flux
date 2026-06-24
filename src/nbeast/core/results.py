@@ -51,6 +51,16 @@ class Results:
     def flux_mesh_to_vtk(self, path: str | Path) -> Path:
         return self.field_to_vtk(path, "flux")
 
+    def flux_volume(self):
+        """3D flux field for the volume render: (values, dims, lower_left, upper_right)."""
+        tally = self._sp.get_tally(name="flux_volume")
+        mesh = tally.find_filter(openmc.MeshFilter).mesh
+        values = tally.get_values(scores=["flux"]).ravel()
+        dims = tuple(int(d) for d in mesh.dimension)
+        lower = tuple(float(v) for v in mesh.lower_left)
+        upper = tuple(float(v) for v in mesh.upper_right)
+        return values, dims, lower, upper
+
     def close(self) -> None:
         self._sp.close()
 

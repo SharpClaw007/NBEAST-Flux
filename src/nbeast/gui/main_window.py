@@ -238,6 +238,7 @@ class MainWindow(QMainWindow):
         for label, score in (
             ("Scalar flux", "flux"),
             ("Fission rate", "fission"),
+            ("Scalar flux (3D volume)", "volume"),
             ("Neutron tracks", "tracks"),
         ):
             item = QListWidgetItem(label)
@@ -376,6 +377,7 @@ class MainWindow(QMainWindow):
         )
         tallies.add_flux_spectrum(model, n_groups=100)
         tallies.add_flux_slice_mesh(model, n=40)
+        tallies.add_flux_volume_mesh(model, n=30)
         return model
 
     def start_run(self) -> None:
@@ -455,8 +457,24 @@ class MainWindow(QMainWindow):
         score = item.data(Qt.UserRole)
         if score == "tracks":
             self.show_tracks()
+        elif score == "volume":
+            self._show_volume()
         else:
             self._show_field(score, switch_tab=True)
+
+    def _show_volume(self) -> None:
+        """Publication-style 3D volume render of the flux field."""
+        if not self._statepoint:
+            return
+        from nbeast.core.results import Results
+
+        try:
+            with Results(self._statepoint) as results:
+                values, dims, lower, upper = results.flux_volume()
+            self.flux_view.show_field_volume(values, dims, lower, upper, title="Scalar flux")
+            self.tabs.setCurrentWidget(self.flux_view)
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Volume render unavailable: {exc}")
 
     def show_tracks(self) -> None:
         """Generate a few neutron tracks and render them in the Flux-map tab."""
@@ -504,7 +522,14 @@ class MainWindow(QMainWindow):
         )
         if res.get("energy_edges") and res.get("flux"):
             self.spectrum_view.set_spectrum(res["energy_edges"], res["flux"])
-        if res.get("flux_map") and res.get("map_bounds"):
+        if res.get("flux_volume") and res.get("vol_bounds"):
+            b = res["vol_bounds"]
+            self.flux_view.show_field_volume(
+                res["flux_volume"], res["vol_dims"], (b[0], b[1], b[2]), (b[3], b[4], b[5]),
+                stls=res.get("stls"), colors=res.get("colors"), title="CAD scalar flux",
+            )
+            self.tabs.setCurrentWidget(self.flux_view)
+        elif res.get("flux_map") and res.get("map_bounds"):
             b = res["map_bounds"]
             self.flux_view.show_field_array(
                 res["flux_map"], (b[0], b[1]), (b[2], b[3]), title="CAD flux map"

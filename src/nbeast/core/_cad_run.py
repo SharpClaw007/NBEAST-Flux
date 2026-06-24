@@ -57,7 +57,17 @@ def main() -> None:
     flux_mesh.filters = [openmc.MeshFilter(mesh)]
     flux_mesh.scores = ["flux"]
 
-    tallies = openmc.Tallies([spectrum, flux_mesh])
+    # Full 3D flux field for the publication volume render.
+    m = 36
+    vmesh = openmc.RegularMesh()
+    vmesh.dimension = (m, m, m)
+    vmesh.lower_left = ll
+    vmesh.upper_right = ur
+    flux_volume = openmc.Tally(name="flux_volume")
+    flux_volume.filters = [openmc.MeshFilter(vmesh)]
+    flux_volume.scores = ["flux"]
+
+    tallies = openmc.Tallies([spectrum, flux_mesh, flux_volume])
 
     rundir = os.path.join(os.path.expanduser("~"), ".nbeast", "cad_run")
     os.makedirs(rundir, exist_ok=True)
@@ -71,12 +81,16 @@ def main() -> None:
         edges = spec.find_filter(openmc.EnergyFilter).values
         flux = spec.get_values(scores=["flux"]).ravel()
         fmap = sp.get_tally(name="flux_mesh").get_values(scores=["flux"]).reshape((n, n))
+        vflux = sp.get_tally(name="flux_volume").get_values(scores=["flux"]).ravel()
         print("RESULT:" + json.dumps({
             "keff": float(k.n), "keff_std": float(k.s),
             "energy_edges": [float(x) for x in edges],
             "flux": [float(x) for x in flux],
             "flux_map": [[float(v) for v in row] for row in fmap],
             "map_bounds": [ll[0], ll[1], ur[0], ur[1]],
+            "flux_volume": [float(v) for v in vflux],
+            "vol_dims": [m, m, m],
+            "vol_bounds": [ll[0], ll[1], ll[2], ur[0], ur[1], ur[2]],
         }))
 
 

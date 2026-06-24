@@ -276,6 +276,13 @@ installs the add-on in-app (off-thread, live log) when the envs are absent.
 CAD runs also return a **spatial flux map** (z-integrated mesh tally), rendered in the 3D
 viewport (centre-peaked on a bare HEU sphere — textbook).
 
+**Publication-style flux render** (`FluxViewport.show_field_volume`): a 3D **volume render**
+of the flux field — log colour scale, a graded opacity transfer function (low flux
+transparent → glowing core), clim clipped to the data, a log colorbar, and a
+semi-transparent **geometry overlay**. Wired into both **CAD runs** (3D `flux_volume`
+tally + the imported solids as overlay) and **template runs** (`Scalar flux (3D volume)`
+in the Results list, via `add_flux_volume_mesh`). Produces the "science-paper" look.
+
 **🏁 Phase 6 is complete (Stages A–F):** custom CAD geometry → mesh → criticality + flux
 spectrum + spatial flux map, with a 3D preview, all native on Apple Silicon, published as a
 one-command optional add-on with in-app setup. The **only** item left is **macOS

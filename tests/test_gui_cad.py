@@ -54,3 +54,12 @@ def test_flux_map_array_headless(qapp):
     view.show_field_array([[0.1, 0.2], [0.3, 0.4]], (0, 0), (1, 1), title="CAD flux map")
     assert "CAD flux map" in view._placeholder.text()
     view.close()
+
+
+def test_volume_render_headless(qapp):
+    from nbeast.gui.viewport3d import FluxViewport
+
+    view = FluxViewport()
+    view.show_field_volume([1.0] * 8, (2, 2, 2), (0, 0, 0), (1, 1, 1), title="Scalar flux")
+    assert "Scalar flux" in view._placeholder.text()
+    view.close()

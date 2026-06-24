@@ -58,6 +58,8 @@ class CadImportDialog(QDialog):
         self._cross_sections = cross_sections
         self._thread = None
         self._worker = None
+        self._preview_stls = None
+        self._preview_colors = None
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
@@ -180,6 +182,8 @@ class CadImportDialog(QDialog):
     def _on_preview(self, stls, tags) -> None:
         self._teardown()
         colors = [cad.MATERIAL_PRESETS[t]["color"] for t in tags]
+        self._preview_stls = list(stls)          # reused for the volume-render overlay
+        self._preview_colors = colors
         self._set_busy(False, f"Previewing {len(stls)} solid(s) — coloured by material.")
         self.preview.emit(list(stls), colors)
 
@@ -204,6 +208,9 @@ class CadImportDialog(QDialog):
     @Slot(object)
     def _on_done(self, res: dict) -> None:
         self._teardown()
+        if self._preview_stls:  # overlay the geometry in the volume render
+            res["stls"] = self._preview_stls
+            res["colors"] = self._preview_colors
         self._set_busy(False, f"Done.  k-eff = {res['keff']:.4f} ± {res['keff_std']:.4f}")
         self.completed.emit(res)
 

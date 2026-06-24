@@ -78,6 +78,71 @@ class FluxViewport(QWidget):
             self._placeholder.show()
             self._placeholder.setText(f"3D view error: {exc}")
 
+    def show_field_volume(self, values, dims, lower_left, upper_right, *,
+                          log: bool = True, stls=None, colors=None,
+                          title: str = "Scalar flux") -> None:
+        """Publication-style 3D volume render of a field (log scale + colorbar +
+        opacity transfer function), with optional semi-transparent geometry overlay.
+
+        `values` is the flattened mesh field (x fastest, matching OpenMC); `dims` is
+        (nx, ny, nz). `stls`/`colors` overlay the geometry (e.g. CAD solids).
+        """
+        self._vtk_path = None
+        self._tracks = None
+        self._title = title
+        if self._headless():
+            self._placeholder.setText(f"{title}: 3D view unavailable in headless mode.")
+            return
+        try:
+            import numpy as np
+            import pyvista as pv
+
+            nx, ny, nz = (int(d) for d in dims)
+            field = np.asarray(values, dtype=float).ravel()
+            label = title
+            if log:
+                positive = field[field > 0]
+                floor = positive.min() if positive.size else 1e-30
+                field = np.log10(np.where(field > 0, field, floor))
+                label = f"log₁₀ {title}"
+
+            # Clip the colour/opacity window to the *real* data so the empty/low
+            # cells don't compress the gradient (they fall below clim -> transparent).
+            real = field[field > field.min() + 1e-9]
+            lo = float(np.percentile(real, 2)) if real.size else float(field.min())
+            hi = float(field.max())
+
+            grid = pv.ImageData()
+            grid.dimensions = (nx, ny, nz)  # points at mesh-cell centres
+            llx, lly, llz = lower_left
+            urx, ury, urz = upper_right
+            grid.origin = (llx, lly, llz)
+            grid.spacing = (
+                (urx - llx) / max(nx - 1, 1),
+                (ury - lly) / max(ny - 1, 1),
+                (urz - llz) / max(nz - 1, 1),
+            )
+            grid.point_data["flux"] = field
+
+            interactor = self._ensure_interactor()
+            interactor.clear()
+            if stls:
+                for i, path in enumerate(stls):
+                    color = colors[i] if colors and i < len(colors) else "lightgray"
+                    interactor.add_mesh(pv.read(path), color=color, opacity=0.12, show_edges=False)
+            interactor.add_volume(
+                grid, scalars="flux", cmap="inferno",
+                opacity=[0.0, 0.04, 0.12, 0.30, 0.60, 0.92],  # graded glow, low = transparent
+                clim=[lo, hi],
+                scalar_bar_args={"title": label},
+            )
+            interactor.add_text(title, font_size=10, name="title")
+            interactor.view_isometric()
+            interactor.reset_camera()
+        except Exception as exc:  # noqa: BLE001
+            self._placeholder.show()
+            self._placeholder.setText(f"3D view error: {exc}")
+
     def show_field_array(self, values, lower_left, upper_right, title: str = "Flux map") -> None:
         """Render a 2D field (e.g. a z-integrated CAD flux map) from a raw array."""
         self._vtk_path = None
