@@ -36,15 +36,31 @@ def main() -> None:
     settings.particles = job["particles"]
     settings.source = openmc.IndependentSource(space=openmc.stats.Point((0.0, 0.0, 0.0)))
 
+    # Log-energy flux spectrum (same grid as the templated runs: 1e-5 eV -> 20 MeV).
+    import numpy as np
+
+    energies = np.logspace(np.log10(1e-5), np.log10(2.0e7), 101)
+    spectrum = openmc.Tally(name="flux_spectrum")
+    spectrum.filters = [openmc.EnergyFilter(energies)]
+    spectrum.scores = ["flux"]
+    tallies = openmc.Tallies([spectrum])
+
     rundir = os.path.join(os.path.expanduser("~"), ".nbeast", "cad_run")
     os.makedirs(rundir, exist_ok=True)
     os.chdir(rundir)
 
-    model = openmc.Model(geometry, materials, settings)
+    model = openmc.Model(geometry, materials, settings, tallies)
     sp_path = model.run(output=False)
     with openmc.StatePoint(sp_path) as sp:
         k = sp.keff
-        print("RESULT:" + json.dumps({"keff": float(k.n), "keff_std": float(k.s)}))
+        tally = sp.get_tally(name="flux_spectrum")
+        edges = tally.find_filter(openmc.EnergyFilter).values
+        flux = tally.get_values(scores=["flux"]).ravel()
+        print("RESULT:" + json.dumps({
+            "keff": float(k.n), "keff_std": float(k.s),
+            "energy_edges": [float(x) for x in edges],
+            "flux": [float(x) for x in flux],
+        }))
 
 
 if __name__ == "__main__":

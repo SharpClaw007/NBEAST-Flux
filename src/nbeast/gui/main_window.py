@@ -490,13 +490,17 @@ class MainWindow(QMainWindow):
         from .cad_import import CadImportDialog
 
         dialog = CadImportDialog(cross_sections=self._cross_sections, parent=self)
-        dialog.completed.connect(
-            lambda res: self.statusBar().showMessage(
-                f"CAD run: k-eff = {res['keff']:.4f} ± {res['keff_std']:.4f}"
-            )
-        )
+        dialog.completed.connect(self._on_cad_completed)
         dialog.preview.connect(self._show_cad_preview)
         dialog.exec()
+
+    def _on_cad_completed(self, res: dict) -> None:
+        self.statusBar().showMessage(
+            f"CAD run: k-eff = {res['keff']:.4f} ± {res['keff_std']:.4f}"
+        )
+        if res.get("energy_edges") and res.get("flux"):
+            self.spectrum_view.set_spectrum(res["energy_edges"], res["flux"])
+            self.tabs.setCurrentWidget(self.spectrum_view)
 
     def _show_cad_preview(self, stls, colors) -> None:
         """Render imported CAD solids (coloured by material) in the 3D viewport."""
