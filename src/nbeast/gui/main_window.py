@@ -9,6 +9,7 @@ off-thread via RunController.
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -63,6 +64,7 @@ class MainWindow(QMainWindow):
         self._param_values = {label: spec.defaults() for label, spec in specs.SPECS.items()}
         self._total_batches = 0
         self._statepoint: str | None = None
+        self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
         self.last_result = None
 
         self.controller = RunController()
@@ -83,6 +85,10 @@ class MainWindow(QMainWindow):
         export_action = QAction("Export report…", self)
         export_action.triggered.connect(self._on_export)
         file_menu.addAction(export_action)
+
+        data_action = QAction("Cross-section data…", self)
+        data_action.triggered.connect(self._open_data_manager)
+        file_menu.addAction(data_action)
 
         examples_menu = self.menuBar().addMenu("&Examples")
         for label, key in (
@@ -466,6 +472,22 @@ class MainWindow(QMainWindow):
         self.run_action.setEnabled(True)
         self.stop_action.setEnabled(False)
         self.statusBar().showMessage(f"Error: {message}")
+
+    def _open_data_manager(self) -> None:
+        from .data_manager import DataManagerDialog
+
+        dialog = DataManagerDialog(active_xml=self._cross_sections, parent=self)
+        dialog.activated.connect(self.set_active_library)
+        dialog.exec()
+
+    def set_active_library(self, path: str) -> None:
+        """Make a downloaded library the active one for model building + runs."""
+        import openmc
+
+        os.environ["OPENMC_CROSS_SECTIONS"] = path
+        openmc.config["cross_sections"] = path
+        self._cross_sections = path
+        self.statusBar().showMessage(f"Active cross-section library: {path}")
 
     def _on_export(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, "Export report to folder…")

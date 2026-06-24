@@ -193,9 +193,13 @@ version bump → build → smoke-test → sign → publish).
 workflow (`.github/workflows/release.yml`) builds all three installers on a `v*` tag —
 including a native arm64 OpenMC compile on an Apple Silicon runner — and attaches them to
 a GitHub Release (unverified until the first tag; like ci.yml it may need a tuning pass).
-Remaining: **in-app full-data download** (the one outstanding v1 *feature*); **macOS
-signing/notarization** (needs an Apple Developer ID); and cutting the **first tagged
-release** (which exercises release.yml).
+**In-app selectable data download** done (`core/data.py` + `gui/data_manager.py`, via
+File ▸ Cross-section data…): pick a library + elements/nuclides or a preset, download into
+a user dir **seeded from the bundle** (so it stays a superset, never a replacement), and
+activate it. The downloader (`openmc_data_downloader` + `retry`) is bundled into the
+installer offline. 26 tests pass. **v0.0.1 released** (Linux + Apple Silicon).
+Remaining: **macOS signing/notarization** (needs an Apple Developer ID); and validating
+the arm64 release job on the next tag (restructured but unproven on a runner).
 
 - Polished installers (macOS signing/notarization decision; Linux AppImage); in-app full-data download
 - Docs/tutorials; public repo + license; build CI

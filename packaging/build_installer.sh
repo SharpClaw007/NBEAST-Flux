@@ -26,6 +26,11 @@ rm -f "$HERE/dist"/nbeast-*.whl
 echo ">>> [2/4] curated data bundle"
 "$ENVBIN/python" "$HERE/make_data_bundle.py" "$REPO/data" "$HERE/dist/nbeast_data.tar.gz"
 
+echo ">>> bundling the in-app data downloader (openmc_data_downloader + retry)"
+rm -rf "$HERE/dist/dlwheels"
+"$ENVBIN/python" -m pip wheel openmc_data_downloader retry --no-deps -w "$HERE/dist/dlwheels"
+tar -czf "$HERE/dist/dlwheels.tar.gz" -C "$HERE/dist" dlwheels
+
 EXTRA_CHANNEL=""
 if [ "$PLATFORM" = "osx-arm64" ]; then
   CHANNEL="${NBEAST_ARM64_CHANNEL:-$HERE/dist/arm64-channel}"

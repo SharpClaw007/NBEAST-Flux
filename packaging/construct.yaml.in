@@ -28,6 +28,7 @@ specs:
 extra_files:
   - dist/nbeast-@VERSION@-py3-none-any.whl
   - dist/nbeast_data.tar.gz
+  - dist/dlwheels.tar.gz
 
 post_install: post_install.sh
 license_file: ../LICENSE

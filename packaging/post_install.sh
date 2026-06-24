@@ -7,6 +7,13 @@ set -euo pipefail
 WHEEL=$(ls "$PREFIX"/nbeast-*.whl)
 "$PREFIX/bin/python" -m pip install --no-index --no-deps "$WHEEL"
 
+# 1b. In-app data-download tool (openmc_data_downloader + retry), installed offline.
+if [ -f "$PREFIX/dlwheels.tar.gz" ]; then
+    tar -xzf "$PREFIX/dlwheels.tar.gz" -C "$PREFIX"
+    "$PREFIX/bin/python" -m pip install --no-index --no-deps "$PREFIX"/dlwheels/*.whl
+    rm -rf "$PREFIX/dlwheels" "$PREFIX/dlwheels.tar.gz"
+fi
+
 # 2. Unpack the curated cross-section data (relative-path cross_sections.xml).
 mkdir -p "$PREFIX/share/nbeast"
 tar -xzf "$PREFIX/nbeast_data.tar.gz" -C "$PREFIX/share/nbeast"
