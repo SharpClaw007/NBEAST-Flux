@@ -243,7 +243,17 @@ predicted. Validated: `openmc-0.15.3-dagmc_nompi_*.conda`; `import openmc` on ar
 (needs a real geometry). **Stages D–F remain parked** until otherwise directed.
 
 So the entire native-arm64 build chain is complete: **MOAB → DAGMC → dagmc-OpenMC**, all
-Mach-O arm64. What remains is the CAD pipeline + GUI (D–F), not toolchain builds.
+Mach-O arm64.
+
+**Stage D — CAD → DAGMC pipeline: ✅ DONE** (`packaging/cad-dagmc-arm64/`). `cad_to_dagmc`
+(CadQuery/OCP + gmsh) on conda-forge arm64 — writes `.h5m` via h5py, **no custom builds
+needed**. Validated end to end: CadQuery HEU sphere (r=8.7 cm) → `.h5m` → dagmc-OpenMC →
+**k-eff 0.984 ± 0.003** native arm64 (closes Stage C's functional run too).
+
+**🎯 Phase 6 technical core is complete (Stages A–D): custom CAD geometry → criticality,
+natively on Apple Silicon.** Remaining: **Stage E (GUI: CAD import + material assignment +
+viewport)** and **Stage F (packaging)** — application work, not toolchain builds. Both
+remain parked until directed.
 
 ---
 

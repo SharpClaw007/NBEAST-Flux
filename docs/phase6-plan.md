@@ -71,11 +71,19 @@ Findings that re-shaped this stage and the ones after:
 - **The functional `.h5m` → k-eff run is the Stage C↔D handoff** — it needs a real DAGMC
   geometry, which is exactly Stage D's output (`cad_to_dagmc`: STEP → `.h5m` → run).
 
-### Stage D — CAD → DAGMC pipeline
-- Use **`cad_to_dagmc`** (open-source: CadQuery/**OCP** + **gmsh** + pymoab) to turn a
-  **STEP** file into a watertight DAGMC `.h5m`. All deps are on conda-forge arm64 once
-  Stage A provides MOAB. (Avoids proprietary Cubit/Coreform.)
-- **Done when:** STEP → `.h5m` → an OpenMC run, native arm64, end to end.
+### Stage D — CAD → DAGMC pipeline  ✅ DONE
+**Built + validated end to end** — see [`../packaging/cad-dagmc-arm64/`](../packaging/cad-dagmc-arm64/).
+- **`cad_to_dagmc`** (CadQuery/OCP + gmsh) on conda-forge **osx-arm64**. Key finding: it
+  writes the `.h5m` via **h5py — no MOAB/pymoab needed**, so the CAD pipeline needs *no
+  custom builds*. (The Stage A pymoab isn't on this path; still valid for other MOAB work.)
+- Runs in its own env (it pins `numpy<=1.26.4`; dagmc-OpenMC is numpy 2) — the `.h5m` is
+  passed as a file between gen + run, which also matches NBEAST's subprocess design.
+- **Validated:** CadQuery HEU sphere (r=8.7 cm) → `sphere.h5m` → **k-eff = 0.984 ± 0.003**
+  native arm64 — the expected near-critical value (Godiva radius 8.74 cm). This also
+  **closes Stage C's functional `.h5m` → k-eff run**.
+
+> **Phase 6 technical core complete:** custom CAD geometry → criticality runs natively on
+> Apple Silicon (Stages A–D). Stages E–F are application work (GUI + packaging), not builds.
 
 ### Stage E — GUI integration
 - **CAD import**: file picker (STEP/BREP), per-volume **material assignment** (a new
