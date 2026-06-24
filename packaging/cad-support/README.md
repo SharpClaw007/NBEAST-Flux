@@ -23,6 +23,21 @@ Everything comes from conda-forge **except** the two packages we built (no arm64
 
 ## Workflow
 
+### Users — one command
+
+The channel is **published** as a release asset, so on Apple Silicon (with Miniforge):
+
+```sh
+./setup_cad_support.sh        # fetches the published channel + creates both envs
+```
+
+Published channel:
+<https://github.com/SharpClaw007/NBEAST-Flux/releases/tag/cad-channel-osx-arm64-1>
+(NBEAST can also run this for you — see *In-app setup* below.) Env names/locations can be
+overridden with `NBEAST_CAD_PYTHON` / `NBEAST_DAGMC_PYTHON`.
+
+### Maintainers — rebuild + republish the channel
+
 ```sh
 # 1. build the custom artifacts (once)
 ../dagmc-arm64/build_dagmc_arm64.sh
@@ -31,15 +46,21 @@ Everything comes from conda-forge **except** the two packages we built (no arm64
 # 2. gather them into a channel
 ./assemble_channel.sh                     # -> ./channel/osx-arm64/*.conda  (gitignored)
 
-# 3. publish ./channel (e.g. attach to a GitHub release), then users run:
-./setup_cad_support.sh <channel-dir-or-url>   # creates cad-arm64 + openmc-dagmc-arm64
+# 3. publish (tar + a non-v* release tag so it doesn't trigger the installer build)
+tar -czf nbeast-cad-channel-osx-arm64.tar.gz -C . channel
+gh release create cad-channel-osx-arm64-2 nbeast-cad-channel-osx-arm64.tar.gz
 ```
 
-NBEAST then auto-detects the envs and enables the CAD feature. Env names/locations can be
-overridden with `NBEAST_CAD_PYTHON` / `NBEAST_DAGMC_PYTHON`.
+`setup_cad_support.sh` also accepts a tarball URL, a local tarball, or a local channel dir.
 
-**Validated:** `assemble_channel.sh` produces an indexed channel, and a dry-run solve
-installs `openmc(dagmc)` + `dagmc` from it with `moab` pulled from conda-forge.
+**Validated:** `assemble_channel.sh` produces an indexed channel, a dry-run solve installs
+`openmc(dagmc)` + `dagmc` from it (`moab` from conda-forge), and the channel is published.
+
+### In-app setup
+
+When the CAD envs are absent, NBEAST shows **File ▸ Set up CAD geometry support…**, which
+runs `setup_cad_support.sh` (fetch channel + create envs) off the UI thread and enables the
+feature when done.
 
 ## Remaining (execution / future)
 

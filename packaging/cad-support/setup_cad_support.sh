@@ -6,12 +6,31 @@
 # in its own env and orchestrates these two as subprocesses; once they exist it
 # auto-enables File > Import CAD geometry (nbeast.core.cad.is_available()).
 #
-# Pass the channel of custom artifacts from assemble_channel.sh (a local dir or a
-# published URL). Usage: ./setup_cad_support.sh <channel-dir-or-url>
+# With no argument it fetches the published channel; or pass a tarball URL, a local
+# tarball, or a local channel dir.
+#   ./setup_cad_support.sh
+#   ./setup_cad_support.sh https://.../nbeast-cad-channel-osx-arm64.tar.gz
+#   ./setup_cad_support.sh ./channel
 set -euo pipefail
 
 CONDA="$HOME/miniforge3/bin/conda"
-CHANNEL="${1:?usage: setup_cad_support.sh <channel-dir-or-url>}"
+DEFAULT_URL="https://github.com/SharpClaw007/NBEAST-Flux/releases/download/cad-channel-osx-arm64-1/nbeast-cad-channel-osx-arm64.tar.gz"
+SOURCE="${1:-$DEFAULT_URL}"
+
+# Resolve SOURCE to a local channel directory.
+if [[ "$SOURCE" == *.tar.gz ]]; then
+  tmp="$(mktemp -d)"
+  if [[ "$SOURCE" == http* ]]; then
+    echo ">>> downloading channel: $SOURCE"
+    curl -fL --retry 3 -o "$tmp/channel.tar.gz" "$SOURCE"
+  else
+    cp "$SOURCE" "$tmp/channel.tar.gz"
+  fi
+  tar -xzf "$tmp/channel.tar.gz" -C "$tmp"
+  CHANNEL="$tmp/channel"
+else
+  CHANNEL="$SOURCE"
+fi
 
 echo ">>> [1/2] CAD env (cad-arm64): STEP -> .h5m   (pure conda-forge)"
 "$CONDA" create -y -n cad-arm64 -c conda-forge \
