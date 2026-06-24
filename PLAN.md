@@ -233,7 +233,17 @@ binaries, `.h5m` round-trip.
 the conda-forge arm64 MOAB lib. Fixes: carry the compiler pins (else `c_osx-arm64`
 unsatisfiable) and pin **`eigen 3.*`** (Eigen 5.x breaks DAGMC 3.2.4) + Homebrew guard.
 Validated: `libdagmc.dylib` + `make_watertight` are Mach-O arm64, links arm64 `libMOAB`.
-**Stages C–F remain parked** until otherwise directed.
+
+**Stage C — dagmc-enabled OpenMC (arm64): ✅ DONE** (`packaging/openmc-arm64/`,
+`build_openmc_dagmc_arm64.sh`). Rebuilt OpenMC's `dagmc` variant for arm64
+(`-DOPENMC_USE_DAGMC=ON`) against the Stage B DAGMC + arm64 MOAB — the smallest stage, as
+predicted. Validated: `openmc-0.15.3-dagmc_nompi_*.conda`; `import openmc` on arm64;
+`libopenmc.dylib` links `libdagmc` + `libMOAB`; `openmc.lib` loads the full native chain;
+`DAGMCUniverse` available. The end-to-end `.h5m` → k-eff run is the Stage C↔D handoff
+(needs a real geometry). **Stages D–F remain parked** until otherwise directed.
+
+So the entire native-arm64 build chain is complete: **MOAB → DAGMC → dagmc-OpenMC**, all
+Mach-O arm64. What remains is the CAD pipeline + GUI (D–F), not toolchain builds.
 
 ---
 

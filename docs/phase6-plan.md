@@ -57,10 +57,19 @@ Findings that re-shaped this stage and the ones after:
   runs, and it links the conda-forge arm64 `libMOAB`. (DoubleDown/embree skipped — not
   needed for dagmc-OpenMC.)
 
-### Stage C — dagmc-enabled OpenMC (arm64)
-- Rebuild OpenMC's **`dagmc`** variant for `osx-arm64` (same recipe we already use,
-  with `dagmc=dagmc`, against the Stage-B DAGMC). Smallest stage — we know this recipe.
-- **Done when:** OpenMC runs a DAGMC `.h5m` model natively → sane k-eff.
+### Stage C — dagmc-enabled OpenMC (arm64)  ✅ DONE (build) / functional run → Stage D
+**Built + validated** — see [`../packaging/openmc-arm64/`](../packaging/openmc-arm64/)
+(`build_openmc_dagmc_arm64.sh` + `variant-dagmc.yaml`).
+- Rebuilt OpenMC's **`dagmc`** variant for `osx-arm64` via rattler-build (flip
+  `dagmc: [dagmc]`, `-DOPENMC_USE_DAGMC=ON`), linked against the Stage B DAGMC (local
+  channel) + conda-forge arm64 MOAB. As predicted, the smallest stage — the recipe was
+  already ours; only fix was putting `rattler-build` on PATH.
+- **Validated:** `openmc-0.15.3-dagmc_nompi_*.conda` for arm64; resolves the Stage B
+  `dagmc 3.2.4` + conda-forge arm64 `moab`; `import openmc` on `arm64`; `libopenmc.dylib`
+  is Mach-O arm64 and links `libdagmc` + `libMOAB`; `openmc.lib` loads the full native
+  chain at runtime; `DAGMCUniverse` available.
+- **The functional `.h5m` → k-eff run is the Stage C↔D handoff** — it needs a real DAGMC
+  geometry, which is exactly Stage D's output (`cad_to_dagmc`: STEP → `.h5m` → run).
 
 ### Stage D — CAD → DAGMC pipeline
 - Use **`cad_to_dagmc`** (open-source: CadQuery/**OCP** + **gmsh** + pymoab) to turn a

@@ -43,3 +43,24 @@ channels:
 
 (Then `constructor packaging/ --platform osx-arm64`.) Upstreaming this as an
 `osx-arm64` addition to the conda-forge openmc feedstock is the long-term fix.
+
+## Phase 6 Stage C — DAGMC-enabled OpenMC (arm64)
+
+v1 ships the `nodagmc` build above. For the CAD-geometry track we also build the
+**`dagmc`** variant, linked against the native arm64 DAGMC (`../dagmc-arm64/`) and the
+conda-forge arm64 MOAB:
+
+```sh
+./build_openmc_dagmc_arm64.sh /tmp/dagmc-arm64-build   # needs the Stage B channel
+# → /tmp/openmc-dagmc-arm64-build/osx-arm64/openmc-0.15.3-dagmc_nompi_*.conda
+```
+
+Same recipe + Homebrew guard; `variant-dagmc.yaml` flips `dagmc: [dagmc]`, the local
+DAGMC channel is added ahead of conda-forge, and the build compiles
+`-DOPENMC_USE_DAGMC=ON`.
+
+**Verified:** installs with the Stage B `dagmc 3.2.4` + conda-forge arm64 `moab`;
+`import openmc` on `arm64`; `libopenmc.dylib` is Mach-O arm64 and links
+`@rpath/libdagmc.dylib` + `@rpath/libMOAB.5.dylib`; `openmc.lib` loads the full native
+chain at runtime and `openmc.DAGMCUniverse` is available. An end-to-end `.h5m` → k-eff
+run is exercised in **Stage D** (once `cad_to_dagmc` produces a real geometry).
