@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
 )
 
-from nbeast.core import specs, tallies
+from nbeast.core import cad, specs, tallies
 
 from .monitor import ConvergenceMonitor
 from .run_controller import RunController
@@ -89,6 +89,12 @@ class MainWindow(QMainWindow):
         data_action = QAction("Cross-section data…", self)
         data_action.triggered.connect(self._open_data_manager)
         file_menu.addAction(data_action)
+
+        # CAD geometry import (DAGMC) — only when the native arm64 DAGMC envs exist.
+        if cad.is_available():
+            cad_action = QAction("Import CAD geometry…", self)
+            cad_action.triggered.connect(self._open_cad_import)
+            file_menu.addAction(cad_action)
 
         examples_menu = self.menuBar().addMenu("&Examples")
         for label, key in (
@@ -478,6 +484,17 @@ class MainWindow(QMainWindow):
 
         dialog = DataManagerDialog(active_xml=self._cross_sections, parent=self)
         dialog.activated.connect(self.set_active_library)
+        dialog.exec()
+
+    def _open_cad_import(self) -> None:
+        from .cad_import import CadImportDialog
+
+        dialog = CadImportDialog(cross_sections=self._cross_sections, parent=self)
+        dialog.completed.connect(
+            lambda res: self.statusBar().showMessage(
+                f"CAD run: k-eff = {res['keff']:.4f} ± {res['keff_std']:.4f}"
+            )
+        )
         dialog.exec()
 
     def set_active_library(self, path: str) -> None:

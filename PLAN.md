@@ -251,9 +251,17 @@ needed**. Validated end to end: CadQuery HEU sphere (r=8.7 cm) → `.h5m` → da
 **k-eff 0.984 ± 0.003** native arm64 (closes Stage C's functional run too).
 
 **🎯 Phase 6 technical core is complete (Stages A–D): custom CAD geometry → criticality,
-natively on Apple Silicon.** Remaining: **Stage E (GUI: CAD import + material assignment +
-viewport)** and **Stage F (packaging)** — application work, not toolchain builds. Both
-remain parked until directed.
+natively on Apple Silicon.**
+
+**Stage E — CAD GUI integration: ✅ DONE (core).** `nbeast.core.cad` orchestrates the
+three envs as subprocesses (gated on `is_available()`); `gui/cad_import.py` is a CAD
+import dialog (STEP picker, **per-solid material assignment**, mesh + run controls)
+wired into the File menu (shown only when the DAGMC envs exist). Validated end to end
+from the GUI env: STEP → assign → mesh → run → **k-eff 0.984 ± 0.005**. 31 tests pass.
+Remaining polish: a 3D CAD viewport + richer results on CAD geometry.
+
+**Remaining: Stage F (packaging)** — bundle the heavier DAGMC/CAD stack (likely a
+separate "NBEAST-CAD" installer). Parked until directed.
 
 ---
 

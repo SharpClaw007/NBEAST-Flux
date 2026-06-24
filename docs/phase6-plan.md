@@ -85,13 +85,20 @@ Findings that re-shaped this stage and the ones after:
 > **Phase 6 technical core complete:** custom CAD geometry → criticality runs natively on
 > Apple Silicon (Stages A–D). Stages E–F are application work (GUI + packaging), not builds.
 
-### Stage E — GUI integration
-- **CAD import**: file picker (STEP/BREP), per-volume **material assignment** (a new
-  UI — map CAD solids to the materials library), mesh-resolution controls → `cad_to_dagmc`.
-- **Engine**: a `CADModel` in `nbeast.core` that builds an OpenMC DAGMC universe from
-  the `.h5m`; the existing tally/results/runner pipeline works unchanged on it.
-- **Viewport**: render the CAD surface mesh in the pyvista viewport (it reads the mesh).
-- **Done when:** import a STEP file → assign materials → mesh → run → flux/spectrum/tracks.
+### Stage E — GUI integration  ✅ DONE (core) / viewport = optional polish
+**Functional CAD feature wired into the app + validated end to end.**
+- **Engine** — `nbeast.core.cad` orchestrates the three envs as subprocesses (the GUI
+  runs in the nbeast env): `inspect_step` (count solids), `generate_h5m` (STEP → `.h5m`,
+  cad env), `run_model` (`.h5m` → k-eff, dagmc-OpenMC env). `is_available()` gates the
+  feature; env pythons discovered by name or `NBEAST_CAD_PYTHON`/`NBEAST_DAGMC_PYTHON`.
+  Material presets + `material_specs()` map per-solid tags to run-ready material dicts.
+- **GUI** — `gui/cad_import.py`: STEP picker, **per-solid material assignment** table,
+  mesh-size + batches/particles controls, off-thread generate+run, k-eff readout. Wired
+  into the File menu (shown only when the DAGMC envs exist); k-eff lands in the status bar.
+- **Validated:** STEP → assign → mesh → run → **k-eff 0.984 ± 0.005**, orchestrated from
+  the nbeast env. 31 tests pass (+ an opt-in `NBEAST_CAD_E2E` end-to-end).
+- **Remaining (optional polish):** a 3D CAD/`.h5m` viewport, and richer results
+  (flux/spectrum) on CAD geometry — the run currently returns k-eff.
 
 ### Stage F — Packaging
 - Bundle the DAGMC stack + CAD pipeline (OCP, gmsh, cad_to_dagmc, dagmc-OpenMC, MOAB,
