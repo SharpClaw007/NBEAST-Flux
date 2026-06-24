@@ -97,14 +97,24 @@ Findings that re-shaped this stage and the ones after:
   into the File menu (shown only when the DAGMC envs exist); k-eff lands in the status bar.
 - **Validated:** STEP → assign → mesh → run → **k-eff 0.984 ± 0.005**, orchestrated from
   the nbeast env. 31 tests pass (+ an opt-in `NBEAST_CAD_E2E` end-to-end).
-- **Remaining (optional polish):** a 3D CAD/`.h5m` viewport, and richer results
-  (flux/spectrum) on CAD geometry — the run currently returns k-eff.
+- **3D CAD viewport ✅** — `FluxViewport.show_cad()` renders the imported solids
+  (per-solid STLs from `cad.tessellate`) coloured by assigned material; a "Preview 3D"
+  button drives it. Validated on a 2-solid pin (fuel + clad).
+- **Remaining (optional):** richer results (flux/spectrum maps) on CAD geometry — the
+  run currently returns k-eff.
 
-### Stage F — Packaging
-- Bundle the DAGMC stack + CAD pipeline (OCP, gmsh, cad_to_dagmc, dagmc-OpenMC, MOAB,
-  DAGMC). This is **heavy** (OCP alone is hundreds of MB) → likely a separate
-  **"NBEAST-CAD"** installer or an optional in-app download rather than the default.
-- Extend the release workflow for the longer dagmc build chain.
+### Stage F — Packaging  ✅ DONE (mechanism) / publish = execution step
+**Distribution mechanism authored + validated** — see [`../packaging/cad-support/`](../packaging/cad-support/).
+Because the feature needs two numpy-incompatible envs, a single bundled installer doesn't
+fit; CAD is an **optional Apple-Silicon add-on** (the app gates on `cad.is_available()`):
+- `assemble_channel.sh` gathers the two custom artifacts (dagmc, dagmc-OpenMC — everything
+  else is conda-forge) into an indexed conda channel.
+- `setup_cad_support.sh <channel>` creates the `cad-arm64` + `openmc-dagmc-arm64` envs;
+  NBEAST then auto-detects them.
+- **Validated:** the channel assembles and a dry-run solve installs `openmc(dagmc)` +
+  `dagmc` from it, `moab` from conda-forge.
+- **Remaining (execution):** publish the channel (release asset / hosted), an optional
+  in-app "Set up CAD support" action, and macOS notarization.
 
 ## Effort & risk (rough)
 

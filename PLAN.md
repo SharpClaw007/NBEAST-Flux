@@ -258,10 +258,20 @@ three envs as subprocesses (gated on `is_available()`); `gui/cad_import.py` is a
 import dialog (STEP picker, **per-solid material assignment**, mesh + run controls)
 wired into the File menu (shown only when the DAGMC envs exist). Validated end to end
 from the GUI env: STEP → assign → mesh → run → **k-eff 0.984 ± 0.005**. 31 tests pass.
-Remaining polish: a 3D CAD viewport + richer results on CAD geometry.
+It also has a **3D CAD viewport** (`FluxViewport.show_cad`) — a "Preview 3D" button
+renders the imported solids coloured by material (validated on a fuel+clad pin).
 
-**Remaining: Stage F (packaging)** — bundle the heavier DAGMC/CAD stack (likely a
-separate "NBEAST-CAD" installer). Parked until directed.
+**Stage F — packaging/distribution: ✅ DONE (mechanism).** Because the feature needs two
+numpy-incompatible envs, CAD ships as an **optional Apple-Silicon add-on** (gated on
+`cad.is_available()`): `packaging/cad-support/assemble_channel.sh` builds a conda channel
+of the two custom artifacts (dagmc + dagmc-OpenMC; everything else is conda-forge), and
+`setup_cad_support.sh` creates the two envs from it. Validated: channel assembles + a
+dry-run solve installs from it. Remaining execution: publish the channel + optional in-app
+setup + notarization.
+
+**🏁 Phase 6 is functionally complete (Stages A–F):** custom CAD geometry → mesh →
+criticality, with a 3D preview, all native on Apple Silicon, and an install path for the
+optional add-on. What's left is execution (publishing artifacts) + optional polish.
 
 ---
 

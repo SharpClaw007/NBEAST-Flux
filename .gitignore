@@ -18,3 +18,6 @@ spikes/run_mesh/
 packaging/construct.yaml
 # README assets are committed despite the *.png rule above
 !docs/screenshots/*.png
+
+# Stage F: assembled CAD channel artifacts (published as release assets, not committed)
+packaging/cad-support/channel/
