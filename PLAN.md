@@ -226,7 +226,14 @@ re-shaped the chain: the **MOAB library already ships for `osx-arm64`** (conda-f
 Stages B/C are pre-unblocked; the only gap was **pymoab**, whose release-tarball autotools
 build is broken (no `paths.py`). Built it from the **git repo via scikit-build-core** (a
 self-contained `MOAB` wheel) and validated natively: `import pymoab`, Mach-O arm64
-binaries, `.h5m` round-trip. **Stages B–F remain parked** until otherwise directed.
+binaries, `.h5m` round-trip.
+
+**Stage B — native arm64 DAGMC: ✅ DONE** (`packaging/dagmc-arm64/`). Built `dagmc 3.2.4`
+(nompi/nodoubledown) for `osx-arm64` via conda-build (feedstock is `meta.yaml`), against
+the conda-forge arm64 MOAB lib. Fixes: carry the compiler pins (else `c_osx-arm64`
+unsatisfiable) and pin **`eigen 3.*`** (Eigen 5.x breaks DAGMC 3.2.4) + Homebrew guard.
+Validated: `libdagmc.dylib` + `make_watertight` are Mach-O arm64, links arm64 `libMOAB`.
+**Stages C–F remain parked** until otherwise directed.
 
 ---
 

@@ -1,0 +1,37 @@
+# osx-arm64, nompi, nodoubledown variant for the DAGMC arm64 port.
+# Based on the dagmc-feedstock osx-64 nodoubledown/nompi config, retargeted to
+# Apple Silicon (deployment target 11.0, arm64 machine triple). channel_sources/
+# channel_targets dropped — channels come from the -c CLI flag.
+MACOSX_DEPLOYMENT_TARGET:
+- '11.0'
+MACOSX_SDK_VERSION:
+- '11.0'
+c_compiler:
+- clang
+c_compiler_version:
+- '19'
+c_stdlib:
+- macosx_deployment_target
+c_stdlib_version:
+- '11.0'
+cxx_compiler:
+- clangxx
+cxx_compiler_version:
+- '19'
+dd:
+- nodoubledown
+hdf5:
+- 1.14.6
+macos_machine:
+- arm64-apple-darwin20.0.0
+mpi:
+- nompi
+mpich:
+- '4'
+openmpi:
+- '5'
+target_platform:
+- osx-arm64
+zip_keys:
+- - c_compiler_version
+  - cxx_compiler_version

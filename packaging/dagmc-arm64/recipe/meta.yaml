@@ -1,0 +1,106 @@
+{% set name = "dagmc" %}
+{% set version = "3.2.4" %}
+{% set build = 3 %}
+
+# ensure mpi is defined (needed for conda-smithy recipe-lint)
+{% set mpi = mpi or 'nompi' %}
+
+{% if mpi == 'nompi' %}
+# prioritize nompi variant via build number
+{% set build = build + 100 %}
+{% endif %}
+
+# ensure doubledown is defined
+{% set dd = dd or 'nodoubledown' %}
+
+package:
+  name: {{ name }}
+  version: {{ version }}
+
+source:
+  git_url: https://github.com/svalinn/DAGMC.git
+  git_rev: v{{ version }}
+
+build:
+  number: {{ build }}
+
+  # add build string so packages can depend on
+  # mpi or nompi variants explicitly:
+  # `dagmc * mpi_mpich_*` for mpich
+  # `dagmc * mpi_openmpi_*` for openmpi
+  # `dagmc * nompi_*` for no mpi
+
+  {% if mpi != 'nompi' %}
+  {% set mpi_prefix = "mpi_" + mpi %}
+  {% else %}
+  {% set mpi_prefix = "nompi" %}
+  {% endif %}
+
+  {% if dd != 'nodoubledown' %}
+  {% set doubledown_prefix = "doubledown" %}
+  {% else %}
+  {% set doubledown_prefix = "nodoubledown" %}
+  {% endif %}
+
+  string: {{ mpi_prefix }}_{{ doubledown_prefix }}_h{{ PKG_HASH }}_{{ build }}
+
+  {% if mpi != 'nompi' %}
+  run_exports:
+    - {{ name }} * {{ mpi_prefix }}_*
+  {% endif %}
+
+  skip: True  # [win]
+
+requirements:
+  build:
+    - cmake
+    - make
+    - embree  # [dd != "nodoubledown"]
+    - {{ compiler('c') }}
+    - {{ stdlib("c") }}
+    - {{ compiler('cxx') }}
+    - {{ mpi }}  # [mpi != 'nompi']
+  host:
+    - eigen 3.*   # DAGMC 3.2.4 predates Eigen 5.x's stricter operator[] checks
+    - embree  # [dd != "nodoubledown"]
+    # matching MOAB HDF5 host requirements to ensure matched pinning of HDF5 versions
+    - hdf5
+    - hdf5 * {{ mpi_prefix }}_*
+    - moab * {{ mpi_prefix }}_tempest_*  # [linux]
+    - moab * {{ mpi_prefix }}_notempest_*  # [osx]
+    - {{ mpi }}  # [mpi != 'nompi']
+  run:
+    - eigen 3.*   # DAGMC 3.2.4 predates Eigen 5.x's stricter operator[] checks
+    - embree  # [dd != "nodoubledown"]
+    - hdf5 * {{ mpi_prefix }}_*
+    - moab * {{ mpi_prefix }}_tempest_*  # [linux]
+    - moab * {{ mpi_prefix }}_notempest_*  # [osx]
+    - zlib
+    - {{ mpi }}  # [mpi != 'nompi']
+
+test:
+   commands:
+     - test -f "${PREFIX}/bin/make_watertight"
+     - make_watertight --help
+
+about:
+  home: https://svalinn.github.io/DAGMC/
+  license: BSD-2-Clause
+  license_file: LICENSE.txt
+  summary: 'Direct Accelerated Geometry Toolkit'
+  description: |
+    Direct Accelerated Geometry Monte Carlo (DAGMC) is a software package that
+    allows users to perform Monte Carlo radiation transport directly on CAD
+    models.
+  dev_url: https://github.com/svalinn/DAGMC
+
+extra:
+  recipe-maintainers:
+    - gonuke
+    - pshriwise
+    - ljacobson64
+    - kkiesling
+    - bam241
+    - ngranda
+    - shimwell
+    - bquan0

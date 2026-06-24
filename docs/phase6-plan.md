@@ -45,10 +45,17 @@ Findings that re-shaped this stage and the ones after:
 - **Validated:** native `arm64` `import pymoab`, Mach-O arm64 `core.so` + bundled
   `libMOAB.dylib`, and an `.h5m` write/read round-trip.
 
-### Stage B — Native arm64 DAGMC
-- Build DAGMC for `osx-arm64` from `dagmc-feedstock` on the Stage-A MOAB.
-- Deps: MOAB, HDF5, optionally **embree** (ray-tracing accel — confirm arm64 support).
-- **Done when:** DAGMC tools (e.g. `make_watertight`) run and it imports natively.
+### Stage B — Native arm64 DAGMC  ✅ DONE
+**Built + validated** — see [`../packaging/dagmc-arm64/`](../packaging/dagmc-arm64/).
+- Built `dagmc 3.2.4` (nompi/nodoubledown) for `osx-arm64` via **conda-build** (the
+  feedstock is the older `meta.yaml` format), retargeting the osx-64 variant to arm64,
+  against the conda-forge arm64 MOAB library.
+- Two gotchas fixed: the compiler pins had to be carried over (else `c_osx-arm64` was
+  unsatisfiable), and **`eigen` pinned to `3.*`** (conda-forge's Eigen 5.x breaks DAGMC
+  3.2.4's matrix `operator[]`). Plus the usual Homebrew/CMake guard.
+- **Validated:** `libdagmc.dylib` + `make_watertight` are Mach-O arm64, `make_watertight`
+  runs, and it links the conda-forge arm64 `libMOAB`. (DoubleDown/embree skipped — not
+  needed for dagmc-OpenMC.)
 
 ### Stage C — dagmc-enabled OpenMC (arm64)
 - Rebuild OpenMC's **`dagmc`** variant for `osx-arm64` (same recipe we already use,
