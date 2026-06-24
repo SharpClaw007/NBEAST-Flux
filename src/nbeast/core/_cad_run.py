@@ -26,8 +26,9 @@ def main() -> None:
         mats.append(mat)
     materials = openmc.Materials(mats)
 
-    dag = openmc.DAGMCUniverse(job["h5m"]).bounded_universe()  # vacuum-bounded box
-    geometry = openmc.Geometry(dag)
+    dag_univ = openmc.DAGMCUniverse(job["h5m"])
+    bbox = dag_univ.bounding_box
+    geometry = openmc.Geometry(dag_univ.bounded_universe())  # vacuum-bounded box
 
     settings = openmc.Settings()
     settings.run_mode = "eigenvalue"
@@ -36,14 +37,27 @@ def main() -> None:
     settings.particles = job["particles"]
     settings.source = openmc.IndependentSource(space=openmc.stats.Point((0.0, 0.0, 0.0)))
 
-    # Log-energy flux spectrum (same grid as the templated runs: 1e-5 eV -> 20 MeV).
     import numpy as np
 
+    # Log-energy flux spectrum (same grid as the templated runs: 1e-5 eV -> 20 MeV).
     energies = np.logspace(np.log10(1e-5), np.log10(2.0e7), 101)
     spectrum = openmc.Tally(name="flux_spectrum")
     spectrum.filters = [openmc.EnergyFilter(energies)]
     spectrum.scores = ["flux"]
-    tallies = openmc.Tallies([spectrum])
+
+    # z-integrated flux map over the geometry bounding box.
+    n = 50
+    ll = [float(v) for v in bbox.lower_left]
+    ur = [float(v) for v in bbox.upper_right]
+    mesh = openmc.RegularMesh()
+    mesh.dimension = (n, n, 1)
+    mesh.lower_left = ll
+    mesh.upper_right = ur
+    flux_mesh = openmc.Tally(name="flux_mesh")
+    flux_mesh.filters = [openmc.MeshFilter(mesh)]
+    flux_mesh.scores = ["flux"]
+
+    tallies = openmc.Tallies([spectrum, flux_mesh])
 
     rundir = os.path.join(os.path.expanduser("~"), ".nbeast", "cad_run")
     os.makedirs(rundir, exist_ok=True)
@@ -53,13 +67,16 @@ def main() -> None:
     sp_path = model.run(output=False)
     with openmc.StatePoint(sp_path) as sp:
         k = sp.keff
-        tally = sp.get_tally(name="flux_spectrum")
-        edges = tally.find_filter(openmc.EnergyFilter).values
-        flux = tally.get_values(scores=["flux"]).ravel()
+        spec = sp.get_tally(name="flux_spectrum")
+        edges = spec.find_filter(openmc.EnergyFilter).values
+        flux = spec.get_values(scores=["flux"]).ravel()
+        fmap = sp.get_tally(name="flux_mesh").get_values(scores=["flux"]).reshape((n, n))
         print("RESULT:" + json.dumps({
             "keff": float(k.n), "keff_std": float(k.s),
             "energy_edges": [float(x) for x in edges],
             "flux": [float(x) for x in flux],
+            "flux_map": [[float(v) for v in row] for row in fmap],
+            "map_bounds": [ll[0], ll[1], ur[0], ur[1]],
         }))
 
 

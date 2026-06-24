@@ -100,9 +100,12 @@ Findings that re-shaped this stage and the ones after:
 - **3D CAD viewport ✅** — `FluxViewport.show_cad()` renders the imported solids
   (per-solid STLs from `cad.tessellate`) coloured by assigned material; a "Preview 3D"
   button drives it. Validated on a 2-solid pin (fuel + clad).
-- **Flux spectrum ✅** — CAD runs add a log-energy flux tally and feed the result to the
-  Spectrum view (validated: a bare-HEU run gives a fast spectrum). **Remaining (optional):**
-  a spatial flux *map* on CAD geometry.
+- **Flux spectrum ✅ + spatial flux map ✅** — CAD runs add a log-energy flux tally and a
+  z-integrated regular-mesh tally over the geometry bounding box; the worker returns both
+  as arrays (no VTK needed in the dagmc env) and the GUI shows the spectrum in the Spectrum
+  view and the flux map in the 3D viewport (`show_field_array`). Validated on a bare-HEU
+  sphere: fast spectrum, and a centre-peaked flux map (~8× centre/edge) — textbook for a
+  bare critical sphere.
 
 ### Stage F — Packaging  ✅ DONE (mechanism) / publish = execution step
 **Distribution mechanism authored + validated** — see [`../packaging/cad-support/`](../packaging/cad-support/).

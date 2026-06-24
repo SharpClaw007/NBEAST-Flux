@@ -273,10 +273,13 @@ CAD runs also return a **flux spectrum** (shown in the Spectrum view), the chann
 **published** (`cad-channel-osx-arm64-1`), and **File ▸ Set up CAD geometry support…**
 installs the add-on in-app (off-thread, live log) when the envs are absent.
 
+CAD runs also return a **spatial flux map** (z-integrated mesh tally), rendered in the 3D
+viewport (centre-peaked on a bare HEU sphere — textbook).
+
 **🏁 Phase 6 is complete (Stages A–F):** custom CAD geometry → mesh → criticality + flux
-spectrum, with a 3D preview, all native on Apple Silicon, published as a one-command
-optional add-on. The only items left are **macOS notarization** (needs an Apple Developer
-ID) and a spatial flux *map* on CAD geometry (optional polish).
+spectrum + spatial flux map, with a 3D preview, all native on Apple Silicon, published as a
+one-command optional add-on with in-app setup. The **only** item left is **macOS
+notarization** (needs an Apple Developer ID).
 
 ---
 

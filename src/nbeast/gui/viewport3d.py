@@ -78,6 +78,39 @@ class FluxViewport(QWidget):
             self._placeholder.show()
             self._placeholder.setText(f"3D view error: {exc}")
 
+    def show_field_array(self, values, lower_left, upper_right, title: str = "Flux map") -> None:
+        """Render a 2D field (e.g. a z-integrated CAD flux map) from a raw array."""
+        self._vtk_path = None
+        self._tracks = None
+        self._title = title
+        if self._headless():
+            self._placeholder.setText(f"{title}: 3D view unavailable in headless mode.")
+            return
+        try:
+            import numpy as np
+            import pyvista as pv
+
+            arr = np.asarray(values, dtype=float)  # (ny, nx)
+            ny, nx = arr.shape
+            llx, lly = lower_left
+            urx, ury = upper_right
+            grid = pv.ImageData()
+            grid.dimensions = (nx + 1, ny + 1, 1)
+            grid.origin = (llx, lly, 0.0)
+            grid.spacing = ((urx - llx) / nx, (ury - lly) / ny, 1.0)
+            grid.cell_data["flux"] = arr.ravel()
+
+            interactor = self._ensure_interactor()
+            interactor.clear()
+            interactor.add_mesh(grid, scalars="flux", cmap="viridis", show_edges=False)
+            interactor.add_text(title, font_size=10, name="title")
+            interactor.enable_parallel_projection()
+            interactor.view_xy()
+            interactor.reset_camera()
+        except Exception as exc:  # noqa: BLE001
+            self._placeholder.show()
+            self._placeholder.setText(f"3D view error: {exc}")
+
     def _ensure_interactor(self):
         from pyvistaqt import QtInteractor
 

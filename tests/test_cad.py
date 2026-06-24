@@ -55,3 +55,5 @@ def test_end_to_end(tmp_path):
     h5m = cad.generate_h5m(step, ["heu"], tmp_path / "m.h5m", max_mesh_size=3.0, min_mesh_size=0.5)
     res = cad.run_model(h5m, cad.material_specs(["heu"]), batches=20, inactive=5, particles=1000)
     assert 0.7 < res["keff"] < 1.2
+    assert len(res["flux"]) == 100
+    assert len(res["flux_map"]) == 50 and len(res["flux_map"][0]) == 50

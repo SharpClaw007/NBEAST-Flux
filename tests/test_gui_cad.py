@@ -44,3 +44,13 @@ def test_setup_dialog_constructs(qapp):
     dialog._append("log line")
     assert "log line" in dialog.log.toPlainText()
     dialog.close()
+
+
+def test_flux_map_array_headless(qapp):
+    from nbeast.gui.viewport3d import FluxViewport
+
+    view = FluxViewport()
+    # under the offscreen platform this falls back to the placeholder (no crash)
+    view.show_field_array([[0.1, 0.2], [0.3, 0.4]], (0, 0), (1, 1), title="CAD flux map")
+    assert "CAD flux map" in view._placeholder.text()
+    view.close()

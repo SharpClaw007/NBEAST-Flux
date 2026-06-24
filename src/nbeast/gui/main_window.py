@@ -504,7 +504,12 @@ class MainWindow(QMainWindow):
         )
         if res.get("energy_edges") and res.get("flux"):
             self.spectrum_view.set_spectrum(res["energy_edges"], res["flux"])
-            self.tabs.setCurrentWidget(self.spectrum_view)
+        if res.get("flux_map") and res.get("map_bounds"):
+            b = res["map_bounds"]
+            self.flux_view.show_field_array(
+                res["flux_map"], (b[0], b[1]), (b[2], b[3]), title="CAD flux map"
+            )
+            self.tabs.setCurrentWidget(self.flux_view)
 
     def _show_cad_preview(self, stls, colors) -> None:
         """Render imported CAD solids (coloured by material) in the 3D viewport."""
