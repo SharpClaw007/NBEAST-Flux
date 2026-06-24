@@ -99,6 +99,67 @@ def is_available() -> bool:
     return cad_python() is not None and dagmc_python() is not None
 
 
+DEFAULT_CHANNEL_URL = (
+    "https://github.com/SharpClaw007/NBEAST-Flux/releases/download/"
+    "cad-channel-osx-arm64-1/nbeast-cad-channel-osx-arm64.tar.gz"
+)
+
+
+def conda_exe() -> pathlib.Path | None:
+    candidate = _conda_root() / "bin" / "conda"
+    return candidate if candidate.exists() else None
+
+
+def setup_support(channel: str | None = None, on_line=None) -> None:
+    """Create the two CAD envs (downloading the published channel if needed).
+
+    Mirrors packaging/cad-support/setup_cad_support.sh, in Python, so the app can
+    run it. `on_line` (if given) receives each output line for live progress.
+    """
+    import shutil
+    import tarfile
+    import tempfile
+    import urllib.request
+
+    def emit(msg):
+        if on_line:
+            on_line(msg)
+
+    conda = conda_exe()
+    if conda is None:
+        raise RuntimeError("conda/Miniforge not found — run setup_cad_support.sh manually.")
+
+    channel = channel or DEFAULT_CHANNEL_URL
+    if str(channel).endswith(".tar.gz"):
+        tmp = tempfile.mkdtemp(prefix="nbeast_cad_ch_")
+        tgz = os.path.join(tmp, "channel.tar.gz")
+        if str(channel).startswith("http"):
+            emit(f"Downloading channel: {channel}")
+            urllib.request.urlretrieve(channel, tgz)
+        else:
+            shutil.copy(channel, tgz)
+        with tarfile.open(tgz) as tar:
+            tar.extractall(tmp, filter="data")
+        channel_dir = os.path.join(tmp, "channel")
+    else:
+        channel_dir = str(channel)
+
+    commands = [
+        [str(conda), "create", "-y", "-n", "cad-arm64", "-c", "conda-forge",
+         "cad_to_dagmc", "cadquery", "gmsh", "python-gmsh", "ocp", "numpy<=1.26.4", "python=3.12"],
+        [str(conda), "create", "-y", "-n", "openmc-dagmc-arm64", "-c", channel_dir, "-c", "conda-forge",
+         "openmc=0.15.3=dagmc_nompi_*", "dagmc=3.2.4=nompi_nodoubledown_*", "python=3.12"],
+    ]
+    for cmd in commands:
+        emit("$ " + " ".join(cmd))
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in proc.stdout:
+            emit(line.rstrip())
+        if proc.wait() != 0:
+            raise RuntimeError("conda env creation failed (see log above).")
+    emit("Done — CAD support is installed. Reopen NBEAST to use it.")
+
+
 def _run_json(python: pathlib.Path, script: pathlib.Path, payload: dict, timeout=1800) -> dict:
     proc = subprocess.run(
         [str(python), str(script)],

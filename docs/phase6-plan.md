@@ -100,8 +100,9 @@ Findings that re-shaped this stage and the ones after:
 - **3D CAD viewport ✅** — `FluxViewport.show_cad()` renders the imported solids
   (per-solid STLs from `cad.tessellate`) coloured by assigned material; a "Preview 3D"
   button drives it. Validated on a 2-solid pin (fuel + clad).
-- **Remaining (optional):** richer results (flux/spectrum maps) on CAD geometry — the
-  run currently returns k-eff.
+- **Flux spectrum ✅** — CAD runs add a log-energy flux tally and feed the result to the
+  Spectrum view (validated: a bare-HEU run gives a fast spectrum). **Remaining (optional):**
+  a spatial flux *map* on CAD geometry.
 
 ### Stage F — Packaging  ✅ DONE (mechanism) / publish = execution step
 **Distribution mechanism authored + validated** — see [`../packaging/cad-support/`](../packaging/cad-support/).
@@ -113,8 +114,12 @@ fit; CAD is an **optional Apple-Silicon add-on** (the app gates on `cad.is_avail
   NBEAST then auto-detects them.
 - **Validated:** the channel assembles and a dry-run solve installs `openmc(dagmc)` +
   `dagmc` from it, `moab` from conda-forge.
-- **Remaining (execution):** publish the channel (release asset / hosted), an optional
-  in-app "Set up CAD support" action, and macOS notarization.
+- **Published ✅** — the channel is a release asset
+  ([cad-channel-osx-arm64-1](https://github.com/SharpClaw007/NBEAST-Flux/releases/tag/cad-channel-osx-arm64-1));
+  `setup_cad_support.sh` defaults to fetching it.
+- **In-app setup ✅** — File ▸ Set up CAD geometry support… (`gui/cad_setup.py`) runs the
+  setup off-thread with a live log when the envs are absent.
+- **Remaining:** macOS **notarization** of the CAD envs (needs an Apple Developer ID).
 
 ## Effort & risk (rough)
 

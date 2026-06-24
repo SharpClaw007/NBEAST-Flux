@@ -90,11 +90,15 @@ class MainWindow(QMainWindow):
         data_action.triggered.connect(self._open_data_manager)
         file_menu.addAction(data_action)
 
-        # CAD geometry import (DAGMC) — only when the native arm64 DAGMC envs exist.
+        # CAD geometry (DAGMC): import when the native arm64 envs exist, else offer setup.
         if cad.is_available():
             cad_action = QAction("Import CAD geometry…", self)
             cad_action.triggered.connect(self._open_cad_import)
             file_menu.addAction(cad_action)
+        else:
+            setup_action = QAction("Set up CAD geometry support…", self)
+            setup_action.triggered.connect(self._open_cad_setup)
+            file_menu.addAction(setup_action)
 
         examples_menu = self.menuBar().addMenu("&Examples")
         for label, key in (
@@ -506,6 +510,11 @@ class MainWindow(QMainWindow):
         """Render imported CAD solids (coloured by material) in the 3D viewport."""
         self.flux_view.show_cad(stls, colors, title="CAD geometry")
         self.tabs.setCurrentWidget(self.flux_view)
+
+    def _open_cad_setup(self) -> None:
+        from .cad_setup import CadSetupDialog
+
+        CadSetupDialog(parent=self).exec()
 
     def set_active_library(self, path: str) -> None:
         """Make a downloaded library the active one for model building + runs."""

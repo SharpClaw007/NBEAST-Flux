@@ -31,6 +31,12 @@ def test_env_discovery_does_not_raise():
         assert result is None or isinstance(result, pathlib.Path)
 
 
+def test_conda_exe_and_channel_url():
+    assert cad.conda_exe() is None or isinstance(cad.conda_exe(), pathlib.Path)
+    assert cad.DEFAULT_CHANNEL_URL.startswith("https://")
+    assert cad.DEFAULT_CHANNEL_URL.endswith(".tar.gz")
+
+
 @pytest.mark.skipif(
     not (cad.is_available() and os.environ.get("NBEAST_CAD_E2E")),
     reason="opt-in (NBEAST_CAD_E2E) end-to-end requiring the DAGMC envs",

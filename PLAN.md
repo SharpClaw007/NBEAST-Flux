@@ -269,9 +269,14 @@ of the two custom artifacts (dagmc + dagmc-OpenMC; everything else is conda-forg
 dry-run solve installs from it. Remaining execution: publish the channel + optional in-app
 setup + notarization.
 
-**🏁 Phase 6 is functionally complete (Stages A–F):** custom CAD geometry → mesh →
-criticality, with a 3D preview, all native on Apple Silicon, and an install path for the
-optional add-on. What's left is execution (publishing artifacts) + optional polish.
+CAD runs also return a **flux spectrum** (shown in the Spectrum view), the channel is
+**published** (`cad-channel-osx-arm64-1`), and **File ▸ Set up CAD geometry support…**
+installs the add-on in-app (off-thread, live log) when the envs are absent.
+
+**🏁 Phase 6 is complete (Stages A–F):** custom CAD geometry → mesh → criticality + flux
+spectrum, with a 3D preview, all native on Apple Silicon, published as a one-command
+optional add-on. The only items left are **macOS notarization** (needs an Apple Developer
+ID) and a spatial flux *map* on CAD geometry (optional polish).
 
 ---
 

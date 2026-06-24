@@ -34,3 +34,13 @@ def test_dialog_constructs_and_populates(qapp):
     assert combo.count() == len(cad.MATERIAL_PRESETS)
     assert combo.currentData() in cad.MATERIAL_PRESETS
     dialog.close()
+
+
+def test_setup_dialog_constructs(qapp):
+    from nbeast.gui.cad_setup import CadSetupDialog
+
+    dialog = CadSetupDialog()
+    assert dialog.install_btn.isEnabled()
+    dialog._append("log line")
+    assert "log line" in dialog.log.toPlainText()
+    dialog.close()
