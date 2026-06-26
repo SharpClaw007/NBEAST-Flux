@@ -10,7 +10,8 @@ _CAPTION = (
     "Neutron flux vs energy, plotted per unit lethargy (so equal areas mean equal "
     "neutron populations). A thermal reactor shows three features: a thermal peak "
     "(~0.025 eV, left), a flat 1/E slowing-down region in the middle, and a fast "
-    "fission peak (~1 MeV, right)."
+    "fission peak (~1 MeV, right). The shaded band is the ±1σ Monte Carlo "
+    "uncertainty — wide bands mean that energy region needs more particles."
 )
 
 
@@ -27,6 +28,11 @@ class SpectrumView(QWidget):
         self._plot.setLabel("bottom", "energy (eV)")
         self._plot.setLabel("left", "flux per unit lethargy (a.u.)")
         self._plot.showGrid(x=True, y=True, alpha=0.3)
+        # ±1σ uncertainty band (drawn under the mean curve).
+        self._lo = self._plot.plot([], [], pen=None)
+        self._hi = self._plot.plot([], [], pen=None)
+        self._band = pg.FillBetweenItem(self._lo, self._hi, brush=(31, 119, 180, 60))
+        self._plot.addItem(self._band)
         self._curve = self._plot.plot([], [], pen=pg.mkPen(width=2))
         layout.addWidget(self._plot)
 
@@ -43,9 +49,11 @@ class SpectrumView(QWidget):
 
     def clear(self) -> None:
         self._curve.setData([], [])
+        self._lo.setData([], [])
+        self._hi.setData([], [])
         self._has_data = False
 
-    def set_spectrum(self, energy_edges, flux) -> None:
+    def set_spectrum(self, energy_edges, flux, flux_std=None) -> None:
         edges = np.asarray(energy_edges, dtype=float)
         values = np.asarray(flux, dtype=float)
         midpoints = np.sqrt(edges[:-1] * edges[1:])
@@ -54,4 +62,14 @@ class SpectrumView(QWidget):
             values, lethargy, out=np.zeros_like(values), where=lethargy > 0
         )
         self._curve.setData(midpoints, per_lethargy)
+        if flux_std is not None:
+            std = np.asarray(flux_std, dtype=float)
+            std_leth = np.divide(
+                std, lethargy, out=np.zeros_like(std), where=lethargy > 0
+            )
+            self._lo.setData(midpoints, per_lethargy - std_leth)
+            self._hi.setData(midpoints, per_lethargy + std_leth)
+        else:
+            self._lo.setData([], [])
+            self._hi.setData([], [])
         self._has_data = bool(values.size)

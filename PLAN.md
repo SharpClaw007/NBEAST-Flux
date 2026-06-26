@@ -294,18 +294,24 @@ currently nails the **simple-for-students** half of the v1 vision; this phase bu
 **trustworthy-enough-to-publish** half. **Rigor comes first** — it's a precondition for the rest,
 and the citation work depends on it. Ordered by leverage:
 
-**Tier 1 — Trust layer (do first; mostly surfacing data OpenMC already produces).**
-- **Tally uncertainties everywhere** — per-bin / per-voxel **relative error** on every result
-  (spectrum, flux & fission maps, volume render). `std_dev` is already in the statepoint; it's
-  just dropped on the floor today (`core/results.py`). A Monte Carlo value without σ isn't a result.
-- **Source-convergence diagnostic** — **Shannon entropy** of the fission source streamed live next
-  to k-eff (it's in the statepoint even though not in `openmc.lib`); flag under-converged inactive
-  batches. This catches the most dangerous failure mode: a wrong k-eff with a confident-looking σ.
-- **Convergence / quality warnings** — surface high tally relative error, too-few inactive batches,
-  and other "don't trust this yet" conditions instead of silently rendering a pretty picture.
-- **Reproducibility & provenance** — random-**seed control**; record the **OpenMC version**,
-  **nuclear-data library + version**, and full run parameters *with every result* and in the
-  exported deck, so any run is exactly reproducible and traceable.
+**Tier 1 — Trust layer: ✅ DONE (2026-06-26).** The "results need error bars + a convergence
+proof" layer landed end to end and is validated against a real Godiva run (54 tests pass).
+- **Tally uncertainties everywhere** — `core/results.py` now reads `std_dev`/`rel_err`:
+  `Spectrum` carries `flux_std` (+`rel_err`); the spectrum view and report draw a **±1σ band**;
+  `field_to_vtk` writes a `<score>_rel_err` array and the Results panel gained a **"Flux relative
+  error"** map; the spectrum CSV gained `flux_std`/`flux_rel_err` columns.
+- **Source-convergence diagnostic** — `tallies.add_entropy_mesh` enables Shannon entropy; the
+  worker computes it **live from the source bank** (`lib.source_bank()`, since `openmc.lib` doesn't
+  expose it) and streams it; the monitor shows a stacked **entropy plot with a dashed inactive→active
+  boundary**, and the report overlays entropy on the k-eff axis.
+- **Convergence / quality warnings** — `results.diagnostics()` returns a `Diagnostics` record
+  (k-eff in pcm, rel-err summary, entropy, warnings) from defensible heuristics: high k-eff σ,
+  noisy flux, too-few inactive batches, and a Shannon-entropy plateau test. Surfaced in the status
+  bar and the report.
+- **Reproducibility & provenance** — a **seed control** (fixed by default → reproducible; verified:
+  same seed ⇒ identical k, different seed ⇒ independent realization); `core/provenance.py` captures
+  NBEAST/OpenMC versions, data library, parameters, seed, host + timestamp, written as
+  `provenance.json` in the exported deck and summarised in the report.
 
 **Tier 2 — Citable (user-led; cheapest high-leverage win).**  *(User is driving this next.)*
 - **Zenodo DOI** auto-minted on each GitHub release, a **`CITATION.cff`**, and a short **JOSS

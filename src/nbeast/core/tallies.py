@@ -71,6 +71,36 @@ def add_flux_volume_mesh(model: openmc.model.Model, n: int = 30) -> openmc.Regul
     )
 
 
+def add_entropy_mesh(model: openmc.model.Model, n: int = 8) -> openmc.RegularMesh:
+    """Enable the Shannon-entropy diagnostic by attaching an entropy mesh.
+
+    OpenMC then records the Shannon entropy of the fission source each generation
+    (written to the statepoint) — the standard check that the source has converged
+    before active batches begin. The mesh is sized to the geometry bounding box;
+    axes that are infinite (e.g. the unbounded z of a 2D pin cell) collapse to a
+    single bin so the entropy reflects the spatial degrees of freedom that matter.
+    """
+    bbox = model.geometry.bounding_box
+    lower, upper = bbox.lower_left, bbox.upper_right
+
+    def axis(lo: float, hi: float, default: float = 1.0) -> tuple[float, float, int]:
+        finite = math.isfinite(lo) and math.isfinite(hi)
+        lo = lo if math.isfinite(lo) else -default
+        hi = hi if math.isfinite(hi) else default
+        return lo, hi, (n if finite else 1)
+
+    x0, x1, nx = axis(float(lower[0]), float(upper[0]))
+    y0, y1, ny = axis(float(lower[1]), float(upper[1]))
+    z0, z1, nz = axis(float(lower[2]), float(upper[2]))
+
+    mesh = openmc.RegularMesh()
+    mesh.dimension = (nx, ny, nz)
+    mesh.lower_left = (x0, y0, z0)
+    mesh.upper_right = (x1, y1, z1)
+    model.settings.entropy_mesh = mesh
+    return mesh
+
+
 def add_flux_slice_mesh(
     model: openmc.model.Model, n: int = 40, z_half: float = 1.0
 ) -> openmc.RegularMesh:

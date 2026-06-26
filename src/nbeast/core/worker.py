@@ -10,10 +10,14 @@ logging). Responds to SIGTERM/SIGINT by finishing the current batch and shutting
 down cleanly. Protocol:
 
     {"type": "start",     "batches": N|null}
-    {"type": "batch",     "batch": i, "keff": k, "keff_std": s}
+    {"type": "batch",     "batch": i, "keff": k, "keff_std": s, "entropy": h|absent}
     {"type": "cancelled", "batch": i}
     {"type": "done",      "keff": k, "keff_std": s}
     {"type": "error",     "message": "...", "trace": "..."}
+
+If ``entropy_mesh.json`` is present in <run_dir>, each batch also reports the live
+Shannon entropy of the fission source (openmc.lib doesn't expose it, so we compute
+it from the source bank). This is best-effort — any failure just omits the field.
 """
 
 from __future__ import annotations
@@ -35,6 +39,45 @@ def _emit(obj: dict) -> None:
     sys.stderr.flush()
 
 
+def _make_entropy_fn():
+    """Build a callable mapping the live source bank -> Shannon entropy (bits),
+    using the entropy mesh dropped by the Runner. Returns None when unavailable."""
+    try:
+        with open("entropy_mesh.json") as handle:
+            spec = json.load(handle)
+        import numpy as np
+
+        ll = np.asarray(spec["lower_left"], dtype=float)
+        ur = np.asarray(spec["upper_right"], dtype=float)
+        dim = np.asarray(spec["dimension"], dtype=int)
+        extent = np.where(ur > ll, ur - ll, 1.0)
+        nbins = int(dim.prod())
+    except Exception:  # noqa: BLE001
+        return None
+
+    def compute(sites) -> float:
+        import numpy as np
+
+        r = sites["r"]
+        if r.dtype.names:  # nested ('x','y','z')
+            xyz = np.stack([r["x"], r["y"], r["z"]], axis=1)
+        else:              # shape (N, 3)
+            xyz = np.asarray(r, dtype=float).reshape(len(sites), 3)
+        names = sites.dtype.names or ()
+        wgt = np.asarray(sites["wgt"], dtype=float) if "wgt" in names else np.ones(len(sites))
+        idx = np.clip(((xyz - ll) / extent * dim).astype(int), 0, dim - 1)
+        flat = (idx[:, 0] * dim[1] + idx[:, 1]) * dim[2] + idx[:, 2]
+        counts = np.bincount(flat, weights=wgt, minlength=nbins).astype(float)
+        total = counts.sum()
+        if total <= 0:
+            return 0.0
+        p = counts / total
+        nz = p > 0
+        return float(-(p[nz] * np.log2(p[nz])).sum())
+
+    return compute
+
+
 def main(argv: list[str]) -> int:
     run_dir = argv[1]
     total_batches = int(argv[2]) if len(argv) > 2 and argv[2] != "None" else None
@@ -53,15 +96,22 @@ def main(argv: list[str]) -> int:
     try:
         lib.init()
         lib.simulation_init()
+        entropy_fn = _make_entropy_fn()
         _emit({"type": "start", "batches": total_batches})
         for _ in lib.iter_batches():
             k = lib.keff()
-            _emit({
+            event = {
                 "type": "batch",
                 "batch": lib.current_batch(),
                 "keff": k[0],
                 "keff_std": k[1],
-            })
+            }
+            if entropy_fn is not None:
+                try:
+                    event["entropy"] = entropy_fn(lib.source_bank())
+                except Exception:  # noqa: BLE001 — disable after first failure
+                    entropy_fn = None
+            _emit(event)
             if stop["flag"]:
                 _emit({"type": "cancelled", "batch": lib.current_batch()})
                 break

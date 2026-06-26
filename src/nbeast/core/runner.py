@@ -24,6 +24,7 @@ class BatchUpdate:
     batch: int
     keff: float
     keff_std: float
+    entropy: float | None = None  # Shannon entropy of the fission source (live)
 
 
 @dataclass
@@ -34,6 +35,23 @@ class RunResult:
     batches: list[BatchUpdate] = field(default_factory=list)
     cancelled: bool = False
     error: str | None = None
+
+
+def _write_entropy_mesh(model: openmc.model.Model, run_dir: Path) -> None:
+    """Drop the entropy mesh bounds where the worker can find them, so it can
+    compute Shannon entropy live (openmc.lib does not expose it directly)."""
+    mesh = getattr(model.settings, "entropy_mesh", None)
+    if mesh is None:
+        return
+    try:
+        spec = {
+            "lower_left": [float(v) for v in mesh.lower_left],
+            "upper_right": [float(v) for v in mesh.upper_right],
+            "dimension": [int(d) for d in mesh.dimension],
+        }
+        (run_dir / "entropy_mesh.json").write_text(json.dumps(spec))
+    except Exception:  # noqa: BLE001 — live entropy is best-effort, never fatal
+        pass
 
 
 class Runner:
@@ -55,6 +73,7 @@ class Runner:
         run_dir.mkdir(parents=True, exist_ok=True)
         model.export_to_model_xml(str(run_dir / "model.xml"))
         n_batches = model.settings.batches
+        _write_entropy_mesh(model, run_dir)
 
         env = dict(os.environ)
         env["FI_PROVIDER"] = "tcp"
@@ -85,7 +104,9 @@ class Runner:
                 if on_start:
                     on_start(msg.get("batches"))
             elif kind == "batch":
-                update = BatchUpdate(msg["batch"], msg["keff"], msg["keff_std"])
+                update = BatchUpdate(
+                    msg["batch"], msg["keff"], msg["keff_std"], msg.get("entropy")
+                )
                 result.batches.append(update)
                 if on_batch:
                     on_batch(update)

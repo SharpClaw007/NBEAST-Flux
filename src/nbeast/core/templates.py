@@ -13,7 +13,11 @@ from . import materials
 
 
 def _eigenvalue_settings(
-    batches: int, inactive: int, particles: int, source: openmc.IndependentSource
+    batches: int,
+    inactive: int,
+    particles: int,
+    source: openmc.IndependentSource,
+    seed: int | None = None,
 ) -> openmc.Settings:
     s = openmc.Settings()
     s.run_mode = "eigenvalue"
@@ -21,6 +25,8 @@ def _eigenvalue_settings(
     s.inactive = inactive
     s.particles = particles
     s.source = source
+    if seed is not None:
+        s.seed = int(seed)  # fix the RNG stream so the run is reproducible
     return s
 
 
@@ -34,6 +40,7 @@ def pin_cell(
     batches: int = 100,
     inactive: int = 20,
     particles: int = 2000,
+    seed: int | None = None,
 ) -> openmc.model.Model:
     """PWR-style UO2/water pin cell with reflective boundaries (infinite lattice)."""
     fuel = materials.uo2(enrichment)
@@ -66,7 +73,7 @@ def pin_cell(
         space=openmc.stats.Box((-h, -h, -1), (h, h, 1)),
         constraints={"fissionable": True},
     )
-    settings = _eigenvalue_settings(batches, inactive, particles, source)
+    settings = _eigenvalue_settings(batches, inactive, particles, source, seed)
     return openmc.model.Model(geometry, openmc.Materials([fuel, clad, mod]), settings)
 
 
@@ -80,6 +87,7 @@ def assembly(
     batches: int = 100,
     inactive: int = 20,
     particles: int = 5000,
+    seed: int | None = None,
 ) -> openmc.model.Model:
     """An N×N square lattice of identical PWR pins, reflective boundaries."""
     n_side = int(n_side)
@@ -116,7 +124,7 @@ def assembly(
         space=openmc.stats.Box((-half, -half, -1), (half, half, 1)),
         constraints={"fissionable": True},
     )
-    settings = _eigenvalue_settings(batches, inactive, particles, source)
+    settings = _eigenvalue_settings(batches, inactive, particles, source, seed)
     return openmc.model.Model(geometry, openmc.Materials([fuel, clad, mod]), settings)
 
 
@@ -126,6 +134,7 @@ def bare_sphere(
     batches: int = 120,
     inactive: int = 20,
     particles: int = 5000,
+    seed: int | None = None,
 ) -> openmc.model.Model:
     """A bare (vacuum-bounded) sphere of one material — the classic fast-metal
     criticality geometry (e.g. Godiva, Jezebel)."""
@@ -133,5 +142,5 @@ def bare_sphere(
     cell = openmc.Cell(name="core", fill=material, region=-sphere)
     geometry = openmc.Geometry([cell])
     source = openmc.IndependentSource(space=openmc.stats.Point((0.0, 0.0, 0.0)))
-    settings = _eigenvalue_settings(batches, inactive, particles, source)
+    settings = _eigenvalue_settings(batches, inactive, particles, source, seed)
     return openmc.model.Model(geometry, openmc.Materials([material]), settings)

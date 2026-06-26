@@ -40,10 +40,15 @@ def to_runnable_script(path: str | Path, xml_name: str = "model.xml") -> Path:
     return path
 
 
-def export_deck(model: openmc.model.Model, out_dir: str | Path) -> tuple[Path, Path]:
-    """Write ``model.xml`` + ``run.py`` into ``out_dir``; returns both paths."""
+def export_deck(
+    model: openmc.model.Model, out_dir: str | Path, metadata=None
+) -> tuple[Path, Path]:
+    """Write ``model.xml`` + ``run.py`` (+ ``provenance.json`` when ``metadata`` is
+    given) into ``out_dir``; returns the ``model.xml`` and ``run.py`` paths."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     xml = to_model_xml(model, out_dir / "model.xml")
     script = to_runnable_script(out_dir / "run.py", xml_name="model.xml")
+    if metadata is not None:
+        metadata.to_json(out_dir / "provenance.json")
     return xml, script

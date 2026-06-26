@@ -44,7 +44,11 @@ from .spectrum import SpectrumView
 from .viewport3d import FluxViewport
 
 _GROUPS = ("Materials", "Geometry")
-FIELD_TITLES = {"flux": "Scalar flux", "fission": "Fission rate"}
+FIELD_TITLES = {
+    "flux": "Scalar flux",
+    "fission": "Fission rate",
+    "flux_rel_err": "Flux relative error (1σ/mean)",
+}
 
 
 def _inactive_for(batches: int) -> int:
@@ -66,6 +70,7 @@ class MainWindow(QMainWindow):
         self._statepoint: str | None = None
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
         self.last_result = None
+        self.last_diagnostics = None
 
         self.controller = RunController()
         self.controller.started.connect(self._on_started)
@@ -179,6 +184,17 @@ class MainWindow(QMainWindow):
         self.particles_spin.valueChanged.connect(lambda _: self._refresh_tree())
         self._particles_act = tb.addWidget(self.particles_spin)
 
+        self._seed_label_act = tb.addWidget(QLabel(" Seed: "))
+        self.seed_spin = QSpinBox()
+        self.seed_spin.setRange(1, 2_147_483_647)
+        self.seed_spin.setValue(1)
+        self.seed_spin.setToolTip(
+            "Random-number seed. Fixed by default so runs are exactly reproducible; "
+            "change it to draw an independent statistical realization."
+        )
+        self.seed_spin.valueChanged.connect(lambda _: self._refresh_tree())
+        self._seed_act = tb.addWidget(self.seed_spin)
+
         tb.addSeparator()
         self.run_action = QAction("Run", self)
         self.run_action.setToolTip("Run the k-effective (criticality) simulation.")
@@ -208,7 +224,8 @@ class MainWindow(QMainWindow):
     def _set_advanced(self, advanced: bool) -> None:
         self._advanced = advanced
         for act in (self._batches_label_act, self._batches_act,
-                    self._particles_label_act, self._particles_act):
+                    self._particles_label_act, self._particles_act,
+                    self._seed_label_act, self._seed_act):
             act.setVisible(advanced)
         for act in (self._quality_label_act, self._quality_combo_act):
             act.setVisible(not advanced)
@@ -238,6 +255,7 @@ class MainWindow(QMainWindow):
         for label, score in (
             ("Scalar flux", "flux"),
             ("Fission rate", "fission"),
+            ("Flux relative error", "flux_rel_err"),
             ("Scalar flux (3D volume)", "volume"),
             ("Neutron tracks", "tracks"),
         ):
@@ -309,6 +327,7 @@ class MainWindow(QMainWindow):
         settings.addChild(QTreeWidgetItem([f"batches = {self.batches_spin.value()}"]))
         settings.addChild(QTreeWidgetItem([f"particles/batch = {self.particles_spin.value()}"]))
         settings.addChild(QTreeWidgetItem([f"inactive = {_inactive_for(self.batches_spin.value())}"]))
+        settings.addChild(QTreeWidgetItem([f"seed = {self.seed_spin.value()}"]))
 
         for item in (materials, geometry, settings):
             self.model_tree.addTopLevelItem(item)
@@ -352,7 +371,8 @@ class MainWindow(QMainWindow):
                 ("batches", self.batches_spin.value()),
                 ("particles/batch", self.particles_spin.value()),
                 ("inactive", _inactive_for(self.batches_spin.value())),
-                ("(edit batches/particles in the toolbar)", ""),
+                ("seed", self.seed_spin.value()),
+                ("(edit batches/particles/seed in the toolbar)", ""),
             ]
         else:
             rows = [("info", "fixed — not editable in v1")]
@@ -362,22 +382,26 @@ class MainWindow(QMainWindow):
             self.properties.setItem(row, 1, QTableWidgetItem(str(value)))
 
     # ---- run lifecycle ----------------------------------------------------
-    def _build_base_model(self, batches: int, particles: int, inactive: int):
+    def _build_base_model(self, batches: int, particles: int, inactive: int,
+                          seed: int | None = None):
         return self.spec.build(
             batches=batches,
             particles=particles,
             inactive=inactive,
+            seed=seed,
             **self._param_values[self._template],
         )
 
     def _build_model(self):
         batches = self.batches_spin.value()
         model = self._build_base_model(
-            batches, self.particles_spin.value(), _inactive_for(batches)
+            batches, self.particles_spin.value(), _inactive_for(batches),
+            seed=self.seed_spin.value(),
         )
         tallies.add_flux_spectrum(model, n_groups=100)
         tallies.add_flux_slice_mesh(model, n=40)
         tallies.add_flux_volume_mesh(model, n=30)
+        tallies.add_entropy_mesh(model)  # Shannon-entropy source-convergence diagnostic
         return model
 
     def start_run(self) -> None:
@@ -385,6 +409,7 @@ class MainWindow(QMainWindow):
             return
         model = self._build_model()
         self.monitor.reset()
+        self.monitor.mark_inactive(_inactive_for(self.batches_spin.value()))
         self.spectrum_view.clear()
         self.results_list.setEnabled(False)
         self.run_action.setEnabled(False)
@@ -401,7 +426,9 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Running… 0/{n_batches} batches")
 
     def _on_batch(self, update) -> None:
-        self.monitor.add_point(update.batch, update.keff, update.keff_std)
+        self.monitor.add_point(
+            update.batch, update.keff, update.keff_std, getattr(update, "entropy", None)
+        )
         self.statusBar().showMessage(
             f"Running… batch {update.batch}/{self._total_batches}  k = {update.keff:.5f}"
         )
@@ -425,28 +452,49 @@ class MainWindow(QMainWindow):
         from nbeast.core.results import Results
 
         self._statepoint = statepoint
+        self.last_diagnostics = None
         try:
             with Results(statepoint) as results:
                 spectrum = results.flux_spectrum()
-                self.spectrum_view.set_spectrum(spectrum.energy_edges, spectrum.flux)
+                self.spectrum_view.set_spectrum(
+                    spectrum.energy_edges, spectrum.flux, spectrum.flux_std
+                )
+                self.last_diagnostics = results.diagnostics()
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(
                 f"{self.statusBar().currentMessage()}  (spectrum unavailable: {exc})"
             )
+        self._surface_diagnostics()
         self.results_list.setEnabled(True)
         self.results_list.setCurrentRow(0)
         self._show_field("flux", switch_tab=False)
 
+    def _surface_diagnostics(self) -> None:
+        """Fold the trust check into the status bar — concise, non-blocking."""
+        diag = self.last_diagnostics
+        if diag is None:
+            return
+        base = f"Done — k = {diag.keff:.5f} ± {diag.keff_std:.5f} ({diag.keff_pcm:.0f} pcm)"
+        if diag.warnings:
+            self.statusBar().showMessage(f"{base}  ⚠ {diag.warnings[0]}")
+        else:
+            self.statusBar().showMessage(f"{base}  ✓ converged")
+
     def _show_field(self, score: str, switch_tab: bool = True) -> None:
-        """Render the chosen mesh field (flux/fission) in the Flux-map tab."""
+        """Render the chosen mesh field in the Flux-map tab.
+
+        A ``*_rel_err`` score shows the relative-error map: the VTK written for the
+        base score also carries its ``<score>_rel_err`` array, so we reuse it.
+        """
         if not self._statepoint:
             return
         from nbeast.core.results import Results
 
+        base = score[:-8] if score.endswith("_rel_err") else score
         try:
-            vtk = Path(self._statepoint).parent / f"{score}.vtk"
+            vtk = Path(self._statepoint).parent / f"{base}.vtk"
             with Results(self._statepoint) as results:
-                results.field_to_vtk(vtk, score)
+                results.field_to_vtk(vtk, base)
             self.flux_view.show_field(vtk, score, FIELD_TITLES.get(score, score))
             if switch_tab:
                 self.tabs.setCurrentWidget(self.flux_view)
@@ -561,8 +609,8 @@ class MainWindow(QMainWindow):
             self.export_report(directory)
 
     def export_report(self, out_dir):
-        """Write the OpenMC deck + a PDF/PNG report + spectrum CSV to out_dir."""
-        from nbeast.core import export
+        """Write the OpenMC deck + provenance + a PDF/PNG report + spectrum CSV."""
+        from nbeast.core import export, provenance
         from nbeast.gui import report
 
         out_dir = Path(out_dir)
@@ -570,9 +618,17 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Run a simulation before exporting a report.")
             return None
 
-        export.export_deck(self._build_model(), out_dir / "openmc_deck")
-
         values = self._param_values[self._template]
+        model = self._build_model()
+        meta = provenance.capture(
+            template=self._template,
+            parameters=values,
+            model=model,
+            cross_sections=self._cross_sections,
+            threads=os.environ.get("OMP_NUM_THREADS"),
+        )
+        export.export_deck(model, out_dir / "openmc_deck", metadata=meta)
+
         lines = [
             f"k-effective = {self.last_result.keff:.5f} +/- {self.last_result.keff_std:.5f}",
             "",
@@ -584,6 +640,10 @@ class MainWindow(QMainWindow):
             lines.append(f"  {param.label} = {text} {param.unit}".rstrip())
         lines.append(f"  batches = {self.batches_spin.value()}")
         lines.append(f"  particles/batch = {self.particles_spin.value()}")
+        lines.append(f"  seed = {self.seed_spin.value()}")
+        if self.last_diagnostics is not None:
+            lines += ["", "Diagnostics:"] + [f"  {ln}" for ln in self.last_diagnostics.summary_lines()]
+        lines += ["", "Provenance:"] + [f"  {ln}" for ln in meta.summary_lines()]
 
         report.write_report(
             out_dir,
