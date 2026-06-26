@@ -288,6 +288,55 @@ spectrum + spatial flux map, with a 3D preview, all native on Apple Silicon, pub
 one-command optional add-on with in-app setup. The **only** item left is **macOS
 notarization** (needs an Apple Developer ID).
 
+### Phase 7 (v3) — Research-grade: from demo to citable tool
+The gap between *"a student can play with it"* and *"a researcher can publish with it."* NBEAST
+currently nails the **simple-for-students** half of the v1 vision; this phase builds the
+**trustworthy-enough-to-publish** half. **Rigor comes first** — it's a precondition for the rest,
+and the citation work depends on it. Ordered by leverage:
+
+**Tier 1 — Trust layer (do first; mostly surfacing data OpenMC already produces).**
+- **Tally uncertainties everywhere** — per-bin / per-voxel **relative error** on every result
+  (spectrum, flux & fission maps, volume render). `std_dev` is already in the statepoint; it's
+  just dropped on the floor today (`core/results.py`). A Monte Carlo value without σ isn't a result.
+- **Source-convergence diagnostic** — **Shannon entropy** of the fission source streamed live next
+  to k-eff (it's in the statepoint even though not in `openmc.lib`); flag under-converged inactive
+  batches. This catches the most dangerous failure mode: a wrong k-eff with a confident-looking σ.
+- **Convergence / quality warnings** — surface high tally relative error, too-few inactive batches,
+  and other "don't trust this yet" conditions instead of silently rendering a pretty picture.
+- **Reproducibility & provenance** — random-**seed control**; record the **OpenMC version**,
+  **nuclear-data library + version**, and full run parameters *with every result* and in the
+  exported deck, so any run is exactly reproducible and traceable.
+
+**Tier 2 — Citable (user-led; cheapest high-leverage win).**  *(User is driving this next.)*
+- **Zenodo DOI** auto-minted on each GitHub release, a **`CITATION.cff`**, and a short **JOSS
+  paper**. JOSS review *requires* the Tier 1 rigor + tests + docs NBEAST largely already has, so
+  it doubles as a forcing function. There is currently **no way to cite NBEAST in a paper** — fix
+  that and it becomes adoptable.
+- **`CONTRIBUTING.md`** + a contributor/developer guide (open-source academic tools live or die by
+  contributors).
+
+**Tier 3 — Research workflow (calculator → instrument).**
+- **Project save / load** — a real project file; **run history persisted** across launches (today
+  every session is an ephemeral temp dir).
+- **Run-to-run comparison** — diff two results side by side (the fundamental research motion is
+  "compare case A vs B").
+- **Parameter sweeps / criticality search** — the **simple↔expert bridge** (e.g. enrichment-to-
+  critical, sensitivity studies); turns the k-eff button into a research instrument.
+- **Raw data export** — mesh-tally arrays **with uncertainties** to HDF5 / NumPy / CSV, beyond the
+  deck + spectrum CSV that exist today.
+
+**Tier 4 — Physics breadth (expands the addressable audience).**
+- **Fixed-source / shielding mode** — opens the entire shielding / dose / detector community that
+  eigenvalue-only locks out (the engine already supports it).
+- **Richer tallies** — reaction rates, heating, dose; and **multigroup cross-section generation**
+  (few-group constants for diffusion codes — a classic teaching + research use).
+- **Temperature / Doppler control in the UI** — it's in the engine (`core/materials.py`), not yet
+  user-editable; reactor-feedback studies need it.
+- **Depletion / burnup** — the biggest lift, the headline reactor-analysis feature; rightly last.
+
+**Done when:** a researcher can run a **converged, uncertainty-quantified, reproducible** case;
+**save / compare / sweep** it; **export the raw tally data**; and **cite NBEAST by DOI**.
+
 ---
 
 ## Decisions
