@@ -110,10 +110,15 @@ class Results:
         return list(self._sp.get_tally(name="flux_mesh").scores)
 
     def field_values(self, score: str = "flux", name: str = "flux_mesh"):
-        """Return (mean, std, rel_err) flat arrays for one mesh-tally score."""
+        """Return (mean, std, rel_err) flat arrays for one mesh-tally score.
+
+        Non-finite values are coerced to zero: some scores (notably ``heating`` for
+        nuclides whose library lacks KERMA data — e.g. water cells) return NaN over
+        part of the mesh, and NaN/Inf corrupt the VTK export and crash the renderer.
+        """
         tally = self._sp.get_tally(name=name)
-        mean = tally.get_values(scores=[score]).ravel()
-        std = tally.get_values(scores=[score], value="std_dev").ravel()
+        mean = _finite(tally.get_values(scores=[score]).ravel())
+        std = _finite(tally.get_values(scores=[score], value="std_dev").ravel())
         rel = np.divide(std, mean, out=np.zeros_like(mean), where=mean > 0)
         return mean, std, rel
 
@@ -172,8 +177,8 @@ class Results:
         upper = tuple(float(v) for v in mesh.upper_right)
         data = {}
         for score in tally.scores:
-            mean = tally.get_values(scores=[score]).ravel()
-            std = tally.get_values(scores=[score], value="std_dev").ravel()
+            mean = _finite(tally.get_values(scores=[score]).ravel())
+            std = _finite(tally.get_values(scores=[score], value="std_dev").ravel())
             rel = np.divide(std, mean, out=np.zeros_like(mean), where=mean > 0)
             data[score] = {"mean": mean, "std": std, "rel_err": rel}
         return {
@@ -305,6 +310,11 @@ class Results:
 
     def __exit__(self, *exc) -> None:
         self.close()
+
+
+def _finite(arr: np.ndarray) -> np.ndarray:
+    """Replace NaN/±Inf with 0.0 — keeps tally arrays safe for VTK and export."""
+    return np.nan_to_num(np.asarray(arr, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def cell_centers(dimension, lower_left, upper_right) -> np.ndarray:

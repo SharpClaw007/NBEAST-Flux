@@ -92,6 +92,16 @@ def test_slice_mesh_carries_reaction_and_heating_scores():
         assert score in mesh_tally.scores
 
 
+def test_finite_coerces_nonfinite():
+    import numpy as np
+
+    from nbeast.core.results import _finite
+
+    out = _finite(np.array([1.0, np.nan, np.inf, -np.inf, 2.0]))
+    assert np.isfinite(out).all()
+    assert list(out) == [1.0, 0.0, 0.0, 0.0, 2.0]
+
+
 def test_dose_mesh_has_energy_function_filter():
     import openmc
 
@@ -204,6 +214,27 @@ def test_shield_fixed_source_run(tmp_path):
         dose, _, _ = r.field_values("flux", "dose_mesh")
         assert (flux > 0).any() and (dose > 0).any()
         assert r.diagnostics().keff is None
+
+
+@requires_data
+def test_heating_field_finite_and_vtk_clean(tmp_path, monkeypatch):
+    """Regression: 'heating' is NaN in water cells (no KERMA data) — those NaNs once
+    wrote `nan` into the VTK and crashed the renderer. The field must come back
+    finite and the VTK must contain no `nan`."""
+    import numpy as np
+
+    from nbeast.core import results, tallies, templates
+
+    monkeypatch.chdir(tmp_path)
+    m = templates.pin_cell(batches=30, inactive=8, particles=2000, seed=1)
+    tallies.add_flux_slice_mesh(m, n=20)   # water cells -> NaN heating before the fix
+    sp = m.run(output=False, cwd=str(tmp_path))
+    with results.Results(sp) as r:
+        mean, std, rel = r.field_values("heating")
+        assert np.isfinite(mean).all() and np.isfinite(std).all() and np.isfinite(rel).all()
+        vtk = r.field_to_vtk(tmp_path / "heating.vtk", score="heating",
+                             name="flux_mesh", label="heating")
+    assert "nan" not in vtk.read_text().lower()  # the exact crash trigger
 
 
 @requires_data
