@@ -147,6 +147,75 @@ class Results:
         upper = tuple(float(v) for v in mesh.upper_right)
         return values, dims, lower, upper
 
+    # ---- raw data export -------------------------------------------------
+    def mesh_arrays(self, name: str = "flux_mesh") -> dict:
+        """Every score on a mesh tally as flat (mean, std, rel_err) arrays, plus the
+        mesh geometry and per-cell centre coordinates — the basis for raw export.
+
+        Arrays are in OpenMC mesh-cell order (x fastest, then y, then z), so the
+        i-th element of every array refers to the same cell as ``centers[i]``.
+        """
+        tally = self._sp.get_tally(name=name)
+        mesh = tally.find_filter(openmc.MeshFilter).mesh
+        dimension = tuple(int(d) for d in mesh.dimension)
+        lower = tuple(float(v) for v in mesh.lower_left)
+        upper = tuple(float(v) for v in mesh.upper_right)
+        data = {}
+        for score in tally.scores:
+            mean = tally.get_values(scores=[score]).ravel()
+            std = tally.get_values(scores=[score], value="std_dev").ravel()
+            rel = np.divide(std, mean, out=np.zeros_like(mean), where=mean > 0)
+            data[score] = {"mean": mean, "std": std, "rel_err": rel}
+        return {
+            "scores": list(tally.scores),
+            "dimension": dimension,
+            "lower_left": lower,
+            "upper_right": upper,
+            "centers": cell_centers(dimension, lower, upper),
+            "data": data,
+        }
+
+    def _spectrum_arrays(self):
+        """(energy_edges, flux, flux_std) if a spectrum tally exists, else None."""
+        try:
+            spec = self.flux_spectrum()
+        except Exception:  # noqa: BLE001 — no spectrum tally is fine
+            return None
+        return (
+            np.asarray(spec.energy_edges, float),
+            np.asarray(spec.flux, float),
+            np.asarray(spec.flux_std, float),
+        )
+
+    def export_mesh_data(
+        self,
+        path: str | Path,
+        fmt: str | None = None,
+        name: str = "flux_mesh",
+        include_spectrum: bool = True,
+    ) -> Path:
+        """Write mesh-tally arrays **with uncertainties** to NumPy / CSV / HDF5.
+
+        ``fmt`` defaults to the file extension: ``.npz`` (NumPy), ``.csv``, or
+        ``.h5``/``.hdf5``. NumPy and HDF5 also carry the flux energy spectrum when
+        present; CSV is a single long table (one row per mesh cell).
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fmt = (fmt or path.suffix.lstrip(".")).lower()
+        arrays = self.mesh_arrays(name)
+        spectrum = self._spectrum_arrays() if include_spectrum else None
+
+        if fmt in ("npz", "npy", "numpy"):
+            _write_npz(path, arrays, spectrum)
+        elif fmt == "csv":
+            _write_csv(path, arrays)
+        elif fmt in ("h5", "hdf5"):
+            _write_hdf5(path, arrays, spectrum)
+        else:
+            raise ValueError(f"Unsupported raw-export format: {fmt!r} (use npz, csv, or h5)")
+        return path
+
     # ---- convergence + trust ---------------------------------------------
     def entropy(self):
         """Shannon entropy of the fission source per generation, or None if not recorded."""
@@ -159,6 +228,15 @@ class Results:
     @property
     def n_inactive(self) -> int:
         return int(getattr(self._sp, "n_inactive", 0) or 0)
+
+    def k_generation(self):
+        """Per-generation k-effective (single estimator), or None — for replaying
+        the convergence curve of a saved run loaded from its statepoint."""
+        kg = getattr(self._sp, "k_generation", None)
+        if kg is None:
+            return None
+        arr = np.asarray(kg, dtype=float).ravel()
+        return arr if arr.size else None
 
     def diagnostics(self) -> Diagnostics:
         """Roll up uncertainties + source convergence into a trust check."""
@@ -200,6 +278,92 @@ class Results:
 
     def __exit__(self, *exc) -> None:
         self.close()
+
+
+def cell_centers(dimension, lower_left, upper_right) -> np.ndarray:
+    """(N, 3) cell-centre coordinates in OpenMC mesh order (x fastest, then y, z)."""
+    nx, ny, nz = (int(d) for d in dimension)
+    lo = np.asarray(lower_left, float)
+    hi = np.asarray(upper_right, float)
+    width = (hi - lo) / np.array([nx, ny, nz], float)
+    idx = np.arange(nx * ny * nz)
+    i = idx % nx
+    j = (idx // nx) % ny
+    k = idx // (nx * ny)
+    return np.column_stack([
+        lo[0] + (i + 0.5) * width[0],
+        lo[1] + (j + 0.5) * width[1],
+        lo[2] + (k + 0.5) * width[2],
+    ])
+
+
+def _write_npz(path: Path, arrays: dict, spectrum) -> None:
+    payload = {
+        "dimension": np.asarray(arrays["dimension"]),
+        "lower_left": np.asarray(arrays["lower_left"], float),
+        "upper_right": np.asarray(arrays["upper_right"], float),
+        "centers": arrays["centers"],
+        "scores": np.asarray(arrays["scores"], dtype=object),
+    }
+    for score, d in arrays["data"].items():
+        payload[f"{score}_mean"] = d["mean"]
+        payload[f"{score}_std"] = d["std"]
+        payload[f"{score}_rel_err"] = d["rel_err"]
+    if spectrum is not None:
+        edges, flux, std = spectrum
+        payload["spectrum_energy_edges_eV"] = edges
+        payload["spectrum_flux"] = flux
+        payload["spectrum_flux_std"] = std
+    np.savez(path, **payload)
+
+
+def _write_csv(path: Path, arrays: dict) -> None:
+    import csv
+
+    scores = arrays["scores"]
+    centers = arrays["centers"]
+    dim = arrays["dimension"]
+    with open(path, "w", newline="") as handle:
+        handle.write(f"# NBEAST mesh tally export — order: x fastest, then y, then z\n")
+        handle.write(f"# dimension = {tuple(dim)}\n")
+        handle.write(f"# lower_left = {tuple(arrays['lower_left'])} cm\n")
+        handle.write(f"# upper_right = {tuple(arrays['upper_right'])} cm\n")
+        writer = csv.writer(handle)
+        header = ["cell", "x_cm", "y_cm", "z_cm"]
+        for s in scores:
+            header += [f"{s}_mean", f"{s}_std", f"{s}_rel_err"]
+        writer.writerow(header)
+        for c in range(centers.shape[0]):
+            row = [c, centers[c, 0], centers[c, 1], centers[c, 2]]
+            for s in scores:
+                d = arrays["data"][s]
+                row += [d["mean"][c], d["std"][c], d["rel_err"][c]]
+            writer.writerow(row)
+
+
+def _write_hdf5(path: Path, arrays: dict, spectrum) -> None:
+    import h5py
+
+    with h5py.File(path, "w") as f:
+        f.attrs["format"] = "nbeast-mesh-export-1"
+        f.attrs["order"] = "x-fastest"
+        mesh = f.create_group("mesh")
+        mesh.attrs["dimension"] = np.asarray(arrays["dimension"])
+        mesh.attrs["lower_left"] = np.asarray(arrays["lower_left"], float)
+        mesh.attrs["upper_right"] = np.asarray(arrays["upper_right"], float)
+        mesh.create_dataset("centers", data=arrays["centers"])
+        scores = f.create_group("scores")
+        for score, d in arrays["data"].items():
+            g = scores.create_group(score)
+            g.create_dataset("mean", data=d["mean"])
+            g.create_dataset("std", data=d["std"])
+            g.create_dataset("rel_err", data=d["rel_err"])
+        if spectrum is not None:
+            edges, flux, std = spectrum
+            spec = f.create_group("spectrum")
+            spec.create_dataset("energy_edges_eV", data=edges)
+            spec.create_dataset("flux", data=flux)
+            spec.create_dataset("flux_std", data=std)
 
 
 # Heuristic thresholds — advisory, tuned for the teaching/benchmark regime.

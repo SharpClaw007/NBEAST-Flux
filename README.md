@@ -67,6 +67,16 @@ arm64 DAGMC/MOAB toolchain that doesn't exist anywhere upstream. See
   exactly what runs.
 - **Report & deck export** — a PDF/PNG report (k-eff, parameters, plots) plus CSV and the
   reproducible **OpenMC input deck** that produced it.
+- **Projects & run history** — save your work to a project; every run is **archived and persists
+  across sessions**, ready to reload into the viewports, compare, or remove.
+- **Run-to-run comparison** — diff two runs side by side: **Δk with its combined uncertainty**
+  (so you can tell a real reactivity effect from Monte Carlo noise), a parameter diff, and the two
+  spectra overlaid.
+- **Parameter sweeps & criticality search** — vary one parameter over a range and watch k respond,
+  or **search for the value that makes the model critical** (enrichment-to-critical,
+  radius-to-critical) — the calculator-to-instrument bridge.
+- **Raw data export** — mesh-tally arrays **with uncertainties** to NumPy (`.npz`), CSV, or HDF5,
+  for downstream analysis.
 - **Simple ↔ Advanced** — Simple mode picks run quality for you; Advanced exposes batches and
   particles. **Validated examples** (Godiva ≈ 1.0, pin cell, assembly) are one click away.
 - **Fully offline** — bundled cross-section data; no Python, conda, or network required.

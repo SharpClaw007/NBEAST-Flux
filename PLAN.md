@@ -322,15 +322,18 @@ proof" layer landed end to end and is validated against a real Godiva run (54 te
 - **Remaining (account-gated, user-only):** enable Zenodo↔GitHub + cut a release to mint the DOI,
   then submit the paper to JOSS; add the DOI badge + `doi:`/`preferred-citation:` once minted.
 
-**Tier 3 — Research workflow (calculator → instrument).**
-- **Project save / load** — a real project file; **run history persisted** across launches (today
-  every session is an ephemeral temp dir).
-- **Run-to-run comparison** — diff two results side by side (the fundamental research motion is
-  "compare case A vs B").
-- **Parameter sweeps / criticality search** — the **simple↔expert bridge** (e.g. enrichment-to-
-  critical, sensitivity studies); turns the k-eff button into a research instrument.
-- **Raw data export** — mesh-tally arrays **with uncertainties** to HDF5 / NumPy / CSV, beyond the
-  deck + spectrum CSV that exist today.
+**Tier 3 — Research workflow: ✅ DONE (2026-06-30).** The calculator became an instrument:
+- **Project save / load** (`core/project.py`) — a directory-backed project (`project.json` +
+  `runs/<id>/statepoint.h5`); **run history persists across launches**, and reopening restores the
+  last template/parameters/settings. A default project under `~/.nbeast` makes this automatic.
+- **Run-to-run comparison** (`core/compare.py` + comparison dialog) — Δk with its **combined
+  uncertainty** (real effect vs MC noise), a changed-first parameter diff, and overlaid spectra.
+- **Parameter sweeps / criticality search** (`core/sweep.py` + sweep dialog) — sweep one parameter
+  over a range, or a robust **regula-falsi-with-bracket-expansion** search for the critical value
+  (validated end-to-end: finds Godiva's critical radius to ~0.02 cm). Runs off-thread, cancellable.
+- **Raw data export** (`results.export_mesh_data`) — mesh-tally mean/std/rel-err + geometry to
+  NumPy / CSV / HDF5 (cell ordering verified against OpenMC centroids).
+- 36 new tests (project, sweep, compare, raw export, GUI), full suite green.
 
 **Tier 4 — Physics breadth (expands the addressable audience).**
 - **Fixed-source / shielding mode** — opens the entire shielding / dose / detector community that

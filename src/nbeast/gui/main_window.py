@@ -23,10 +23,12 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMessageBox,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -37,7 +39,9 @@ from PySide6.QtWidgets import (
 )
 
 from nbeast.core import cad, specs, tallies
+from nbeast.core.project import Project
 
+from .history import HistoryPanel
 from .monitor import ConvergenceMonitor
 from .run_controller import RunController
 from .spectrum import SpectrumView
@@ -57,12 +61,18 @@ def _inactive_for(batches: int) -> int:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, run_root: str | Path | None = None, parent=None):
+    def __init__(self, run_root: str | Path | None = None,
+                 project_dir: str | Path | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("NBEAST — neutron-flux Monte Carlo")
         self.resize(1100, 720)
 
-        self._run_root = Path(run_root) if run_root else Path(tempfile.gettempdir()) / "nbeast"
+        if run_root is not None:
+            self._run_root = Path(run_root)
+            default_project = self._run_root / "project"
+        else:
+            self._run_root = Path(tempfile.gettempdir()) / "nbeast"
+            default_project = Path.home() / ".nbeast" / "default-project"
         self._template = next(iter(specs.SPECS))  # "Pin cell"
         # Per-template current parameter values, initialised from defaults.
         self._param_values = {label: spec.defaults() for label, spec in specs.SPECS.items()}
@@ -71,6 +81,10 @@ class MainWindow(QMainWindow):
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
         self.last_result = None
         self.last_diagnostics = None
+
+        # Persistent project: run history + last-used model state survive restarts.
+        self.project = Project.open_or_create(project_dir or default_project,
+                                              name="NBEAST project")
 
         self.controller = RunController()
         self.controller.started.connect(self._on_started)
@@ -82,14 +96,30 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_docks()
         self._build_central()
+        self._restore_from_project()
         self.statusBar().showMessage("Ready")
         self._refresh_tree()
+        self._refresh_history()
+        self._update_title()
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
+        new_project_action = QAction("New project…", self)
+        new_project_action.triggered.connect(self._new_project)
+        file_menu.addAction(new_project_action)
+        open_project_action = QAction("Open project…", self)
+        open_project_action.triggered.connect(self._open_project)
+        file_menu.addAction(open_project_action)
+        file_menu.addSeparator()
+
         export_action = QAction("Export report…", self)
         export_action.triggered.connect(self._on_export)
         file_menu.addAction(export_action)
+
+        raw_action = QAction("Export raw data…", self)
+        raw_action.setToolTip("Export mesh-tally arrays with uncertainties (NumPy / CSV / HDF5).")
+        raw_action.triggered.connect(self._on_export_raw)
+        file_menu.addAction(raw_action)
 
         data_action = QAction("Cross-section data…", self)
         data_action.triggered.connect(self._open_data_manager)
@@ -114,6 +144,15 @@ class MainWindow(QMainWindow):
             action = QAction(label, self)
             action.triggered.connect(lambda _checked=False, k=key: self.load_example(k))
             examples_menu.addAction(action)
+
+        analysis_menu = self.menuBar().addMenu("&Analysis")
+        sweep_action = QAction("Parameter sweep / criticality search…", self)
+        sweep_action.setToolTip(
+            "Vary one parameter over a range, or search for the value that makes the "
+            "model critical (k = target)."
+        )
+        sweep_action.triggered.connect(self._open_sweep)
+        analysis_menu.addAction(sweep_action)
 
     # Curated starting points: (template, param overrides, quality, status hint).
     _EXAMPLES = {
@@ -272,6 +311,17 @@ class MainWindow(QMainWindow):
         results_dock.setWidget(self.results_list)
         self.addDockWidget(Qt.RightDockWidgetArea, results_dock)
 
+        # Run history: persisted runs, reloadable + comparable.
+        self.history_panel = HistoryPanel()
+        self.history_panel.loadRequested.connect(self._load_history_run)
+        self.history_panel.compareRequested.connect(self._compare_history_runs)
+        self.history_panel.deleteRequested.connect(self._delete_history_runs)
+        history_dock = QDockWidget("Run history", self)
+        history_dock.setWidget(self.history_panel)
+        self.addDockWidget(Qt.RightDockWidgetArea, history_dock)
+        self.tabifyDockWidget(results_dock, history_dock)
+        results_dock.raise_()
+
     def _build_central(self) -> None:
         self.tabs = QTabWidget()
         self.monitor = ConvergenceMonitor()
@@ -408,6 +458,7 @@ class MainWindow(QMainWindow):
         if self.controller.running:
             return
         model = self._build_model()
+        self._persist_state()  # remember the current model so reopening restores it
         self.monitor.reset()
         self.monitor.mark_inactive(_inactive_for(self.batches_spin.value()))
         self.spectrum_view.clear()
@@ -415,7 +466,8 @@ class MainWindow(QMainWindow):
         self.run_action.setEnabled(False)
         self.stop_action.setEnabled(True)
         self.statusBar().showMessage("Running…")
-        self.controller.start(model, self._run_root / "current")
+        self._current_run_dir = self._run_root / "current"
+        self.controller.start(model, self._current_run_dir)
 
     def stop_run(self) -> None:
         self.controller.cancel()
@@ -446,6 +498,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Done")
         if not result.cancelled and result.statepoint:
             self._load_results(result.statepoint)
+            self._archive_run(result)
 
     def _load_results(self, statepoint: str) -> None:
         """Populate spectrum + flux/fission views from a finished run (defensive)."""
@@ -548,6 +601,186 @@ class MainWindow(QMainWindow):
         self.run_action.setEnabled(True)
         self.stop_action.setEnabled(False)
         self.statusBar().showMessage(f"Error: {message}")
+
+    # ---- project + run history -------------------------------------------
+    def _current_settings(self) -> dict:
+        return {
+            "batches": self.batches_spin.value(),
+            "particles": self.particles_spin.value(),
+            "seed": self.seed_spin.value(),
+        }
+
+    def _persist_state(self) -> None:
+        """Record the current editor state into the active project (best-effort)."""
+        try:
+            self.project.update_state(
+                template=self._template,
+                param_values=self._param_values,
+                settings=self._current_settings(),
+            )
+        except Exception:  # noqa: BLE001 — persistence must never break a run
+            pass
+
+    def _restore_from_project(self) -> None:
+        """Reload the last-used template, parameters, and run settings from the project."""
+        if not self.project.template or self.project.template not in specs.SPECS:
+            return
+        for label, values in self.project.param_values.items():
+            if label in self._param_values:
+                self._param_values[label].update(values)
+        s = self.project.settings or {}
+        if "batches" in s:
+            self.batches_spin.setValue(int(s["batches"]))
+        if "particles" in s:
+            self.particles_spin.setValue(int(s["particles"]))
+        if "seed" in s:
+            self.seed_spin.setValue(int(s["seed"]))
+        self.set_template(self.project.template)
+        self._update_title()
+
+    def _update_title(self) -> None:
+        self.setWindowTitle(f"NBEAST — {self.project.name}")
+
+    def _refresh_history(self) -> None:
+        self.history_panel.set_runs(self.project.runs)
+
+    def _archive_run(self, result) -> None:
+        """Save a finished run into the project so it persists and can be revisited."""
+        try:
+            run_dir = Path(result.statepoint).parent
+            warnings = self.last_diagnostics.warnings if self.last_diagnostics else []
+            self.project.add_run(
+                statepoint_src=result.statepoint,
+                model_xml_src=run_dir / "model.xml",
+                template=self._template,
+                parameters=dict(self._param_values[self._template]),
+                batches=self.batches_spin.value(),
+                inactive=_inactive_for(self.batches_spin.value()),
+                particles=self.particles_spin.value(),
+                seed=self.seed_spin.value(),
+                keff=result.keff,
+                keff_std=result.keff_std,
+                warnings=list(warnings),
+            )
+            self._refresh_history()
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Run finished (could not archive: {exc})")
+
+    def _load_history_run(self, run_id: str) -> None:
+        """Bring a saved run's results back into the viewports."""
+        from nbeast.core.runner import RunResult
+
+        record = self.project.get_run(run_id)
+        if record is None:
+            return
+        sp = self.project.statepoint_path(record)
+        if sp is None or not sp.exists():
+            self.statusBar().showMessage(f"Statepoint for {run_id} is missing.")
+            return
+        self.last_result = RunResult(
+            keff=record.keff, keff_std=record.keff_std, statepoint=str(sp)
+        )
+        self._load_results(str(sp))
+        self._replay_convergence(str(sp), record.inactive or 0)
+        self.statusBar().showMessage(f"Loaded {record.title()} ({run_id})")
+
+    def _replay_convergence(self, statepoint: str, n_inactive: int) -> None:
+        """Redraw the convergence monitor for a loaded run from its statepoint."""
+        from nbeast.core.results import Results
+
+        try:
+            with Results(statepoint) as results:
+                kg = results.k_generation()
+                ent = results.entropy()
+            if kg is None:
+                return
+            self.monitor.reset()
+            self.monitor.mark_inactive(n_inactive)
+            for i, k in enumerate(kg):
+                e = float(ent[i]) if (ent is not None and i < ent.size) else None
+                self.monitor.add_point(i + 1, float(k), None, e)
+        except Exception:  # noqa: BLE001 — the curve is a nicety, never fatal
+            pass
+
+    def _delete_history_runs(self, ids: list) -> None:
+        if not ids:
+            return
+        n = len(ids)
+        confirm = QMessageBox.question(
+            self, "Delete runs",
+            f"Delete {n} saved run{'s' if n != 1 else ''} from this project? "
+            "This removes the archived statepoint(s) and cannot be undone.",
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        for run_id in ids:
+            self.project.delete_run(run_id)
+        self._refresh_history()
+        self.statusBar().showMessage(f"Deleted {n} run{'s' if n != 1 else ''}.")
+
+    def _compare_history_runs(self, id_a: str, id_b: str) -> None:
+        from .compare_dialog import CompareDialog
+
+        a, b = self.project.get_run(id_a), self.project.get_run(id_b)
+        if a is None or b is None:
+            return
+        dialog = CompareDialog(a, b, self.project, parent=self)
+        dialog.exec()
+
+    def _new_project(self) -> None:
+        parent = QFileDialog.getExistingDirectory(self, "New project — choose a parent folder")
+        if not parent:
+            return
+        name, ok = QInputDialog.getText(self, "New project", "Project name:", text="study")
+        if not ok or not name.strip():
+            return
+        target = Path(parent) / name.strip()
+        if (target / "project.json").exists():
+            self.statusBar().showMessage(f"A project already exists at {target}.")
+            return
+        self._switch_project(Project.create(target, name=name.strip()))
+
+    def _open_project(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, "Open project — choose the project folder")
+        if not directory:
+            return
+        try:
+            self._switch_project(Project.open(directory))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Open project", f"Not an NBEAST project:\n{exc}")
+
+    def _switch_project(self, project: Project) -> None:
+        self.project = project
+        self._restore_from_project()
+        self._refresh_tree()
+        self._refresh_history()
+        self._update_title()
+        self.statusBar().showMessage(f"Project: {project.path}")
+
+    def _on_export_raw(self) -> None:
+        if not self._statepoint:
+            self.statusBar().showMessage("Run or load a simulation before exporting raw data.")
+            return
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Export raw mesh data", "flux_mesh.npz",
+            "NumPy archive (*.npz);;CSV (*.csv);;HDF5 (*.h5)",
+        )
+        if not path:
+            return
+        from nbeast.core.results import Results
+
+        try:
+            with Results(self._statepoint) as results:
+                out = results.export_mesh_data(path)
+            self.statusBar().showMessage(f"Raw data exported to {out}")
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Raw export failed: {exc}")
+
+    def _open_sweep(self) -> None:
+        from .sweep_dialog import SweepDialog
+
+        dialog = SweepDialog(self, parent=self)
+        dialog.exec()
 
     def _open_data_manager(self) -> None:
         from .data_manager import DataManagerDialog
@@ -656,6 +889,7 @@ class MainWindow(QMainWindow):
         return out_dir
 
     def closeEvent(self, event) -> None:
-        # Don't leave an OpenMC worker subprocess running after the window closes.
+        # Remember the current model, and don't leave a worker subprocess running.
+        self._persist_state()
         self.controller.stop_and_wait()
         super().closeEvent(event)

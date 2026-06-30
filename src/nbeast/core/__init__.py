@@ -3,21 +3,27 @@
 from . import (
     benchmarks,
     cad,
+    compare,
     data,
     export,
     materials,
+    project,
     provenance,
     results,
     runner,
     specs,
+    sweep,
     tallies,
     templates,
     tracks,
 )
+from .compare import KeffDelta, keff_delta
+from .project import Project, RunRecord
 from .provenance import RunMetadata
 from .results import Diagnostics, Results, Spectrum
 from .runner import BatchUpdate, Runner, RunResult
 from .specs import SPECS, Parameter, TemplateSpec
+from .sweep import CriticalitySearch, sweep_values
 
 __all__ = [
     "materials",
@@ -32,6 +38,9 @@ __all__ = [
     "data",
     "cad",
     "specs",
+    "project",
+    "sweep",
+    "compare",
     "SPECS",
     "Parameter",
     "TemplateSpec",
@@ -42,4 +51,10 @@ __all__ = [
     "Spectrum",
     "Diagnostics",
     "RunMetadata",
+    "Project",
+    "RunRecord",
+    "CriticalitySearch",
+    "sweep_values",
+    "KeffDelta",
+    "keff_delta",
 ]
