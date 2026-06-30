@@ -1,0 +1,21 @@
+{
+  "title": "NBEAST: An offline desktop GUI for neutron-flux Monte Carlo on OpenMC",
+  "description": "NBEAST is an offline, open-source desktop application that puts a complete graphical front end on the OpenMC Monte Carlo neutron transport code. It targets reactor-physics education and rapid exploratory analysis, reports statistical uncertainties and source-convergence diagnostics with every result, and supports CAD geometry natively on Apple Silicon via a from-source DAGMC/MOAB build.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "MIT",
+  "creators": [
+    {
+      "name": "Reyes, J.",
+      "affiliation": "Independent Researcher"
+    }
+  ],
+  "keywords": [
+    "neutronics",
+    "Monte Carlo",
+    "reactor physics",
+    "criticality",
+    "OpenMC",
+    "DAGMC"
+  ]
+}

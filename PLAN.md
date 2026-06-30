@@ -313,13 +313,14 @@ proof" layer landed end to end and is validated against a real Godiva run (54 te
   NBEAST/OpenMC versions, data library, parameters, seed, host + timestamp, written as
   `provenance.json` in the exported deck and summarised in the report.
 
-**Tier 2 — Citable (user-led; cheapest high-leverage win).**  *(User is driving this next.)*
-- **Zenodo DOI** auto-minted on each GitHub release, a **`CITATION.cff`**, and a short **JOSS
-  paper**. JOSS review *requires* the Tier 1 rigor + tests + docs NBEAST largely already has, so
-  it doubles as a forcing function. There is currently **no way to cite NBEAST in a paper** — fix
-  that and it becomes adoptable.
-- **`CONTRIBUTING.md`** + a contributor/developer guide (open-source academic tools live or die by
-  contributors).
+**Tier 2 — Citable: ✅ DONE (2026-06-30).** In-repo citation infrastructure is in place:
+- **`CITATION.cff`** (CFF 1.2.0) so GitHub renders a "Cite this repository" button; **`.zenodo.json`**
+  so a GitHub release auto-archives with a DOI; a short **JOSS paper** (`paper/paper.md` + `paper.bib`)
+  whose Statement of Need leads with the native Apple-Silicon CAD toolchain.
+- **`CONTRIBUTING.md`** (dev setup, test workflow, the benchmark contract, PR process) plus README
+  **Contributing** and **Citing** sections.
+- **Remaining (account-gated, user-only):** enable Zenodo↔GitHub + cut a release to mint the DOI,
+  then submit the paper to JOSS; add the DOI badge + `doi:`/`preferred-citation:` once minted.
 
 **Tier 3 — Research workflow (calculator → instrument).**
 - **Project save / load** — a real project file; **run history persisted** across launches (today

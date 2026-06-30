@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use NBEAST in your work, please cite it using these metadata."
+title: "NBEAST: An offline desktop GUI for neutron-flux Monte Carlo on OpenMC"
+abstract: >-
+  NBEAST is an offline, open-source desktop application that puts a complete
+  graphical front end on the OpenMC Monte Carlo neutron transport code. It targets
+  reactor-physics education and rapid exploratory analysis, reports statistical
+  uncertainties and source-convergence diagnostics with every result, and supports
+  CAD geometry natively on Apple Silicon via a from-source DAGMC/MOAB build.
+type: software
+authors:
+  - given-names: J.
+    family-names: Reyes
+    affiliation: "Independent Researcher"
+    email: juanquiviri@gmail.com
+version: 0.0.1
+date-released: "2026-06-26"
+license: MIT
+repository-code: "https://github.com/SharpClaw007/NBEAST-Flux"
+url: "https://github.com/SharpClaw007/NBEAST-Flux"
+keywords:
+  - neutronics
+  - Monte Carlo
+  - reactor physics
+  - criticality
+  - OpenMC
+  - DAGMC
+# Once the JOSS paper / Zenodo DOI exists, add a `preferred-citation:` block here
+# (type: article, with the JOSS DOI) and a top-level `doi:` for the archived release.

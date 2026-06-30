@@ -228,6 +228,22 @@ pytest          # regression tests
 
 Building installers and cutting releases: see [`packaging/RELEASE.md`](packaging/RELEASE.md).
 
+## Contributing
+
+Contributions are welcome — bug reports, validated benchmark cases, docs, and code.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, the test workflow,
+and the benchmark contract that keeps results trustworthy.
+
+## Citing NBEAST
+
+If you use NBEAST in academic work, please cite it. Citation metadata is in
+[`CITATION.cff`](CITATION.cff) (GitHub renders a “Cite this repository” button from
+it). A [JOSS](https://joss.theoj.org/) paper and an archival
+[Zenodo](https://zenodo.org/) DOI are in preparation; once published, cite those.
+
+Until then, please also cite the engine NBEAST is built on — OpenMC
+[@Romano2015 / Romano et al., *Ann. Nucl. Energy* **82** (2015) 90–97].
+
 ## Acknowledgements
 
 - [**OpenMC**](https://openmc.org) — the Monte Carlo transport engine NBEAST is built on.

@@ -9,7 +9,7 @@ description = "An offline, open-source desktop GUI for neutron-flux Monte Carlo 
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "NBEAST contributors" }]
+authors = [{ name = "J. Reyes", email = "juanquiviri@gmail.com" }]
 keywords = ["neutronics", "monte-carlo", "openmc", "reactor-physics"]
 
 # NOTE: the heavy engine + scientific + GUI dependencies (openmc, numpy, h5py,
