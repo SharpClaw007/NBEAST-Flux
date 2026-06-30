@@ -91,6 +91,15 @@ arm64 DAGMC/MOAB toolchain that doesn't exist anywhere upstream. See
   particles. **Validated examples** (Godiva ≈ 1.0, pin cell, assembly) are one click away.
 - **Fully offline** — bundled cross-section data; no Python, conda, or network required.
 
+## Validation
+
+NBEAST's models are checked against published and textbook values — most importantly,
+it reproduces the **Godiva** criticality benchmark (ICSBEP HEU-MET-FAST-001) **exactly
+within uncertainty** (k = 1.00000 ± 0.00044 vs the published 1.0000 ± 0.0010). The fuel
+**Doppler coefficient** (−3.59 pcm/K), pin-cell and assembly k∞, neutron spectra, water
+shielding, and few-group constants all come out physically correct. See
+[`docs/validation.md`](docs/validation.md) for the full table, method, and scope.
+
 ## Screenshots
 
 <table>
