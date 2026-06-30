@@ -40,8 +40,10 @@ def write_report(out_dir, title: str, summary_lines: list[str], result, statepoi
     # --- k-eff convergence (+ Shannon entropy on a twin axis) ---
     ax_conv = fig.add_subplot(grid[0, 1])
     if result and result.batches:
-        ax_conv.plot([u.batch for u in result.batches], [u.keff for u in result.batches],
-                     lw=1.2, color="#1f77b4", label="k-effective")
+        k_pts = [(u.batch, u.keff) for u in result.batches if u.keff is not None]
+        if k_pts:  # eigenvalue run — fixed-source runs have no k-effective
+            ax_conv.plot([b for b, _ in k_pts], [k for _, k in k_pts],
+                         lw=1.2, color="#1f77b4", label="k-effective")
     ax_conv.set_title("Convergence")
     ax_conv.set_xlabel("batch / generation")
     ax_conv.set_ylabel("k-effective", color="#1f77b4")

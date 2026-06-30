@@ -77,6 +77,16 @@ arm64 DAGMC/MOAB toolchain that doesn't exist anywhere upstream. See
   radius-to-critical) — the calculator-to-instrument bridge.
 - **Raw data export** — mesh-tally arrays **with uncertainties** to NumPy (`.npz`), CSV, or HDF5,
   for downstream analysis.
+- **Fixed-source / shielding mode** — a water shield slab with a neutron beam; watch **flux and
+  dose rate** attenuate through the shield (no k-eff — the door to shielding/dose/detector work).
+- **Richer tallies** — reaction-rate maps (absorption, ν-fission), a **heating** (energy-deposition)
+  map, and a **flux-to-dose-rate** map (ICRP coefficients), all in the Results panel.
+- **Temperature / Doppler control** — set the temperature and watch reactivity respond; sweep it for
+  the **temperature reactivity coefficient** (cross sections interpolated to the bundled data grid).
+- **Multigroup cross sections** — collapse a run into **few-group constants** (CASMO-2/4/8/16:
+  total, absorption, fission, ν-fission, χ) for a diffusion code, exportable to CSV/HDF5.
+- **Depletion / burnup** *(optional add-on)* — track **k-effective vs burnup** as fuel depletes;
+  needs a downloadable depletion chain + library (guided setup), so it stays out of the core bundle.
 - **Simple ↔ Advanced** — Simple mode picks run quality for you; Advanced exposes batches and
   particles. **Validated examples** (Godiva ≈ 1.0, pin cell, assembly) are one click away.
 - **Fully offline** — bundled cross-section data; no Python, conda, or network required.

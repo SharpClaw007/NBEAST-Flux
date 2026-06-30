@@ -18,6 +18,7 @@ def _eigenvalue_settings(
     particles: int,
     source: openmc.IndependentSource,
     seed: int | None = None,
+    temperature: float | None = None,
 ) -> openmc.Settings:
     s = openmc.Settings()
     s.run_mode = "eigenvalue"
@@ -27,7 +28,26 @@ def _eigenvalue_settings(
     s.source = source
     if seed is not None:
         s.seed = int(seed)  # fix the RNG stream so the run is reproducible
+    _apply_temperature(s, temperature)
     return s
+
+
+def _apply_temperature(settings: openmc.Settings, temperature: float | None) -> None:
+    """Run every cell at ``temperature`` (K) — the knob for Doppler-feedback studies.
+    Left at the data's default when None.
+
+    Uses the *nearest* available data temperature (within a wide tolerance) rather
+    than interpolation: the curated thermal-scattering kernel (H in H2O) ships at a
+    single temperature (294 K), so interpolation would reject any other value. With
+    ``nearest`` the resonance (continuous-energy) data still snaps to the bundled
+    250/294/600/900/1200 K grid — enough to show fuel Doppler feedback — while the
+    thermal kernel stays at 294 K. The parameter range is capped so the request
+    always stays within tolerance of an available temperature.
+    """
+    if temperature is None:
+        return
+    settings.temperature = {"method": "nearest", "tolerance": 1000.0,
+                            "default": float(temperature)}
 
 
 def pin_cell(
@@ -41,6 +61,7 @@ def pin_cell(
     inactive: int = 20,
     particles: int = 2000,
     seed: int | None = None,
+    temperature: float | None = None,
 ) -> openmc.model.Model:
     """PWR-style UO2/water pin cell with reflective boundaries (infinite lattice)."""
     fuel = materials.uo2(enrichment)
@@ -73,7 +94,7 @@ def pin_cell(
         space=openmc.stats.Box((-h, -h, -1), (h, h, 1)),
         constraints={"fissionable": True},
     )
-    settings = _eigenvalue_settings(batches, inactive, particles, source, seed)
+    settings = _eigenvalue_settings(batches, inactive, particles, source, seed, temperature)
     return openmc.model.Model(geometry, openmc.Materials([fuel, clad, mod]), settings)
 
 
@@ -88,6 +109,7 @@ def assembly(
     inactive: int = 20,
     particles: int = 5000,
     seed: int | None = None,
+    temperature: float | None = None,
 ) -> openmc.model.Model:
     """An N×N square lattice of identical PWR pins, reflective boundaries."""
     n_side = int(n_side)
@@ -124,7 +146,7 @@ def assembly(
         space=openmc.stats.Box((-half, -half, -1), (half, half, 1)),
         constraints={"fissionable": True},
     )
-    settings = _eigenvalue_settings(batches, inactive, particles, source, seed)
+    settings = _eigenvalue_settings(batches, inactive, particles, source, seed, temperature)
     return openmc.model.Model(geometry, openmc.Materials([fuel, clad, mod]), settings)
 
 
@@ -135,6 +157,7 @@ def bare_sphere(
     inactive: int = 20,
     particles: int = 5000,
     seed: int | None = None,
+    temperature: float | None = None,
 ) -> openmc.model.Model:
     """A bare (vacuum-bounded) sphere of one material — the classic fast-metal
     criticality geometry (e.g. Godiva, Jezebel)."""
@@ -142,5 +165,65 @@ def bare_sphere(
     cell = openmc.Cell(name="core", fill=material, region=-sphere)
     geometry = openmc.Geometry([cell])
     source = openmc.IndependentSource(space=openmc.stats.Point((0.0, 0.0, 0.0)))
-    settings = _eigenvalue_settings(batches, inactive, particles, source, seed)
+    settings = _eigenvalue_settings(batches, inactive, particles, source, seed, temperature)
     return openmc.model.Model(geometry, openmc.Materials([material]), settings)
+
+
+def _fixed_source_settings(
+    batches: int,
+    particles: int,
+    source: openmc.IndependentSource,
+    seed: int | None = None,
+    temperature: float | None = None,
+) -> openmc.Settings:
+    s = openmc.Settings()
+    s.run_mode = "fixed source"  # external source, no k-eff / inactive batches
+    s.batches = batches
+    s.particles = particles
+    s.source = source
+    if seed is not None:
+        s.seed = int(seed)
+    _apply_temperature(s, temperature)
+    return s
+
+
+def shield_slab(
+    thickness: float = 30.0,
+    source_energy: float = 2.0,
+    transverse_half: float = 5.0,
+    batches: int = 25,
+    particles: int = 5000,
+    inactive: int = 0,        # accepted for a uniform build signature; unused
+    seed: int | None = None,
+    temperature: float | None = None,
+) -> openmc.model.Model:
+    """A water shield slab with a monoenergetic neutron beam — the canonical
+    fixed-source attenuation/shielding demo.
+
+    A pencil beam of ``source_energy`` MeV neutrons enters a slab of light water of
+    the given ``thickness`` (cm); transverse boundaries are reflective so the slab is
+    effectively infinite in y and z (a 1-D problem). Pair with the flux and dose-rate
+    meshes to see exponential attenuation through the shield.
+    """
+    water = materials.water()
+    w = float(transverse_half)
+    front = openmc.XPlane(0.0, boundary_type="vacuum")
+    back = openmc.XPlane(thickness, boundary_type="vacuum")
+    y0 = openmc.YPlane(-w, boundary_type="reflective")
+    y1 = openmc.YPlane(w, boundary_type="reflective")
+    z0 = openmc.ZPlane(-w, boundary_type="reflective")
+    z1 = openmc.ZPlane(w, boundary_type="reflective")
+    cell = openmc.Cell(name="shield", fill=water,
+                       region=+front & -back & +y0 & -y1 & +z0 & -z1)
+    geometry = openmc.Geometry([cell])
+
+    # Plane source just inside the front face (a hair off the vacuum boundary so the
+    # sites land in the cell), aimed straight through the slab.
+    x_src = min(0.05, thickness * 0.01)
+    source = openmc.IndependentSource(
+        space=openmc.stats.Box((x_src, -w, -w), (x_src, w, w)),
+        angle=openmc.stats.Monodirectional((1.0, 0.0, 0.0)),
+        energy=openmc.stats.Discrete([float(source_energy) * 1.0e6], [1.0]),
+    )
+    settings = _fixed_source_settings(batches, particles, source, seed, temperature)
+    return openmc.model.Model(geometry, openmc.Materials([water]), settings)

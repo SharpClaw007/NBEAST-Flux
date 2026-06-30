@@ -335,14 +335,25 @@ proof" layer landed end to end and is validated against a real Godiva run (54 te
   NumPy / CSV / HDF5 (cell ordering verified against OpenMC centroids).
 - 36 new tests (project, sweep, compare, raw export, GUI), full suite green.
 
-**Tier 4 — Physics breadth (expands the addressable audience).**
-- **Fixed-source / shielding mode** — opens the entire shielding / dose / detector community that
-  eigenvalue-only locks out (the engine already supports it).
-- **Richer tallies** — reaction rates, heating, dose; and **multigroup cross-section generation**
-  (few-group constants for diffusion codes — a classic teaching + research use).
-- **Temperature / Doppler control in the UI** — it's in the engine (`core/materials.py`), not yet
-  user-editable; reactor-feedback studies need it.
-- **Depletion / burnup** — the biggest lift, the headline reactor-analysis feature; rightly last.
+**Tier 4 — Physics breadth: ✅ DONE (2026-06-30).** All four pillars landed:
+- **Fixed-source / shielding mode** — a `run_mode` on `TemplateSpec`, a water shield-slab template
+  with a monoenergetic beam, and run_mode threaded end-to-end (runner writes `run_meta.json`; the
+  worker skips k-eff; the GUI handles the no-k-eff monitor/diagnostics/report). Validated: flux &
+  dose attenuate ~40× through 30 cm of water.
+- **Richer tallies** — reaction-rate maps (absorption, ν-fission), a **heating** map, and a
+  flux-to-dose-rate mesh (ICRP coefficients), all surfaced in the Results picker; plus **multigroup
+  XS generation** (`core/mgxs_gen.py` + dialog) producing CASMO-2/4/8/16 few-group constants
+  (total/absorption/fission/ν-fission/χ) with CSV/HDF5 export.
+- **Temperature / Doppler control** — a global temperature, exposed as an editable *and sweepable*
+  parameter, threaded through every builder (nearest-temperature interpolation; capped at 1200 K by
+  the single-temperature water S(α,β) kernel). Validated: Δk(294→900 K) ≈ −1842 pcm.
+- **Depletion / burnup** — an **optional, data-gated** workflow (like CAD): `core/depletion.py` +
+  `_depletion_run.py` subprocess + a setup guide and a k-vs-burnup dialog. `is_available()` gates on
+  a configured chain. Validated end-to-end locally against a reduced CASL chain (k vs burnup over a
+  toy Godiva history); the chain + depletion-capable library are user-downloaded, never bundled.
+- Notes: depletion needs `normalization_mode='source-rate'` for reduced chains (no fission-Q);
+  power normalization needs a full chain. A stale local data index (missing O18) that silently broke
+  water templates through the `openmc.lib` worker was rebuilt via `data.build_index`.
 
 **Done when:** a researcher can run a **converged, uncertainty-quantified, reproducible** case;
 **save / compare / sweep** it; **export the raw tally data**; and **cite NBEAST by DOI**.

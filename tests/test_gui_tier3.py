@@ -130,7 +130,7 @@ def test_sweep_dialog_builds_and_builder(qapp, tmp_path):
     win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "proj")
     win.set_template("Pin cell")
     dialog = SweepDialog(win, parent=win)
-    assert dialog.param_combo.count() == 5  # pin cell parameters
+    assert dialog.param_combo.count() == 6  # pin cell parameters (incl. temperature)
 
     # mode toggle controls which group shows
     dialog.mode_combo.setCurrentIndex(1)

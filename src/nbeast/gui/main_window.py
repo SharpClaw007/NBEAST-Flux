@@ -51,6 +51,10 @@ _GROUPS = ("Materials", "Geometry")
 FIELD_TITLES = {
     "flux": "Scalar flux",
     "fission": "Fission rate",
+    "absorption": "Absorption rate",
+    "nu-fission": "Neutron production (ν-fission)",
+    "heating": "Heating (energy deposition)",
+    "dose": "Neutron dose rate",
     "flux_rel_err": "Flux relative error (1σ/mean)",
 }
 
@@ -140,6 +144,7 @@ class MainWindow(QMainWindow):
             ("Godiva — bare HEU sphere (k ≈ 1.0)", "godiva"),
             ("PWR pin cell (k∞ ≈ 1.41)", "pincell"),
             ("7×7 PWR fuel assembly", "assembly"),
+            ("Water shield slab (fixed source)", "shield"),
         ):
             action = QAction(label, self)
             action.triggered.connect(lambda _checked=False, k=key: self.load_example(k))
@@ -154,12 +159,30 @@ class MainWindow(QMainWindow):
         sweep_action.triggered.connect(self._open_sweep)
         analysis_menu.addAction(sweep_action)
 
+        mgxs_action = QAction("Generate multigroup constants…", self)
+        mgxs_action.setToolTip(
+            "Collapse the run into few-group cross sections (total, absorption, "
+            "fission, ν-fission, χ) for a diffusion code."
+        )
+        mgxs_action.triggered.connect(self._open_mgxs)
+        analysis_menu.addAction(mgxs_action)
+
+        depletion_action = QAction("Depletion / burnup…", self)
+        depletion_action.setToolTip(
+            "Track k-effective and nuclide inventory as fuel burns (needs depletion "
+            "data — optional add-on)."
+        )
+        depletion_action.triggered.connect(self._open_depletion)
+        analysis_menu.addAction(depletion_action)
+
     # Curated starting points: (template, param overrides, quality, status hint).
     _EXAMPLES = {
         "godiva": ("Godiva", {}, "High", "Godiva benchmark — expect k ≈ 1.0 (critical)."),
         "pincell": ("Pin cell", {}, "Standard", "PWR pin cell — expect k∞ ≈ 1.41."),
         "assembly": ("Fuel assembly", {"n_side": 7}, "Standard",
                      "7×7 PWR fuel assembly — expect k∞ ≈ 1.41."),
+        "shield": ("Shield slab", {}, "Standard",
+                   "Water shield — watch flux & dose attenuate through the slab."),
     }
 
     def load_example(self, key: str) -> None:
@@ -294,6 +317,10 @@ class MainWindow(QMainWindow):
         for label, score in (
             ("Scalar flux", "flux"),
             ("Fission rate", "fission"),
+            ("Absorption rate", "absorption"),
+            ("Neutron production (ν-fission)", "nu-fission"),
+            ("Heating (energy deposition)", "heating"),
+            ("Neutron dose rate", "dose"),
             ("Flux relative error", "flux_rel_err"),
             ("Scalar flux (3D volume)", "volume"),
             ("Neutron tracks", "tracks"),
@@ -442,16 +469,23 @@ class MainWindow(QMainWindow):
             **self._param_values[self._template],
         )
 
+    @property
+    def _is_fixed_source(self) -> bool:
+        return self.spec.run_mode == "fixed source"
+
     def _build_model(self):
         batches = self.batches_spin.value()
+        inactive = 0 if self._is_fixed_source else _inactive_for(batches)
         model = self._build_base_model(
-            batches, self.particles_spin.value(), _inactive_for(batches),
+            batches, self.particles_spin.value(), inactive,
             seed=self.seed_spin.value(),
         )
         tallies.add_flux_spectrum(model, n_groups=100)
-        tallies.add_flux_slice_mesh(model, n=40)
+        tallies.add_flux_slice_mesh(model, n=40)   # flux + reaction-rate + heating maps
         tallies.add_flux_volume_mesh(model, n=30)
-        tallies.add_entropy_mesh(model)  # Shannon-entropy source-convergence diagnostic
+        tallies.add_dose_mesh(model, n=40)         # flux-to-dose-rate (shielding)
+        if not self._is_fixed_source:
+            tallies.add_entropy_mesh(model)  # fission-source convergence (eigenvalue only)
         return model
 
     def start_run(self) -> None:
@@ -460,7 +494,7 @@ class MainWindow(QMainWindow):
         model = self._build_model()
         self._persist_state()  # remember the current model so reopening restores it
         self.monitor.reset()
-        self.monitor.mark_inactive(_inactive_for(self.batches_spin.value()))
+        self.monitor.mark_inactive(0 if self._is_fixed_source else _inactive_for(self.batches_spin.value()))
         self.spectrum_view.clear()
         self.results_list.setEnabled(False)
         self.run_action.setEnabled(False)
@@ -481,9 +515,14 @@ class MainWindow(QMainWindow):
         self.monitor.add_point(
             update.batch, update.keff, update.keff_std, getattr(update, "entropy", None)
         )
-        self.statusBar().showMessage(
-            f"Running… batch {update.batch}/{self._total_batches}  k = {update.keff:.5f}"
-        )
+        if update.keff is None:  # fixed-source run — no k-effective to report
+            self.statusBar().showMessage(
+                f"Running… batch {update.batch}/{self._total_batches}"
+            )
+        else:
+            self.statusBar().showMessage(
+                f"Running… batch {update.batch}/{self._total_batches}  k = {update.keff:.5f}"
+            )
 
     def _on_finished(self, result) -> None:
         self.last_result = result
@@ -495,7 +534,7 @@ class MainWindow(QMainWindow):
         elif result.keff is not None:
             self.statusBar().showMessage(f"Done — k = {k_txt} ± {result.keff_std:.5f}")
         else:
-            self.statusBar().showMessage("Done")
+            self.statusBar().showMessage(f"Done — fixed-source run ({len(result.batches)} batches)")
         if not result.cancelled and result.statepoint:
             self._load_results(result.statepoint)
             self._archive_run(result)
@@ -527,27 +566,44 @@ class MainWindow(QMainWindow):
         diag = self.last_diagnostics
         if diag is None:
             return
-        base = f"Done — k = {diag.keff:.5f} ± {diag.keff_std:.5f} ({diag.keff_pcm:.0f} pcm)"
+        if diag.keff is None:  # fixed-source run
+            base = f"Done — fixed-source run ({diag.n_active} batches)"
+            ok_text = "✓ flux statistics OK"
+        else:
+            base = f"Done — k = {diag.keff:.5f} ± {diag.keff_std:.5f} ({diag.keff_pcm:.0f} pcm)"
+            ok_text = "✓ converged"
         if diag.warnings:
             self.statusBar().showMessage(f"{base}  ⚠ {diag.warnings[0]}")
         else:
-            self.statusBar().showMessage(f"{base}  ✓ converged")
+            self.statusBar().showMessage(f"{base}  {ok_text}")
+
+    @staticmethod
+    def _field_source(score: str) -> tuple[str, str, str]:
+        """Map a Results-panel score to (tally name, tally score, VTK array label).
+
+        Most maps live on the ``flux_mesh`` tally; the dose rate lives on its own
+        ``dose_mesh`` tally (it reads ``flux`` weighted by the dose function).
+        """
+        base = score[:-8] if score.endswith("_rel_err") else score
+        if base == "dose":
+            return "dose_mesh", "flux", "dose"
+        return "flux_mesh", base, base
 
     def _show_field(self, score: str, switch_tab: bool = True) -> None:
         """Render the chosen mesh field in the Flux-map tab.
 
         A ``*_rel_err`` score shows the relative-error map: the VTK written for the
-        base score also carries its ``<score>_rel_err`` array, so we reuse it.
+        base score also carries its ``<label>_rel_err`` array, so we reuse it.
         """
         if not self._statepoint:
             return
         from nbeast.core.results import Results
 
-        base = score[:-8] if score.endswith("_rel_err") else score
+        tally_name, tally_score, label = self._field_source(score)
         try:
-            vtk = Path(self._statepoint).parent / f"{base}.vtk"
+            vtk = Path(self._statepoint).parent / f"{label}.vtk"
             with Results(self._statepoint) as results:
-                results.field_to_vtk(vtk, base)
+                results.field_to_vtk(vtk, score=tally_score, name=tally_name, label=label)
             self.flux_view.show_field(vtk, score, FIELD_TITLES.get(score, score))
             if switch_tab:
                 self.tabs.setCurrentWidget(self.flux_view)
@@ -782,6 +838,28 @@ class MainWindow(QMainWindow):
         dialog = SweepDialog(self, parent=self)
         dialog.exec()
 
+    def _open_mgxs(self) -> None:
+        from .mgxs_dialog import MgxsDialog
+
+        MgxsDialog(self, parent=self).exec()
+
+    def _open_depletion(self) -> None:
+        from nbeast.core import depletion
+
+        if depletion.is_available():
+            from .depletion_dialog import DepletionDialog
+
+            DepletionDialog(self, parent=self).exec()
+        else:
+            from .depletion_setup import DepletionSetupDialog
+
+            dialog = DepletionSetupDialog(parent=self)
+            dialog.configured.connect(
+                lambda: self.statusBar().showMessage("Depletion data configured — "
+                                                     "reopen Analysis ▸ Depletion / burnup.")
+            )
+            dialog.exec()
+
     def _open_data_manager(self) -> None:
         from .data_manager import DataManagerDialog
 
@@ -862,11 +940,11 @@ class MainWindow(QMainWindow):
         )
         export.export_deck(model, out_dir / "openmc_deck", metadata=meta)
 
-        lines = [
-            f"k-effective = {self.last_result.keff:.5f} +/- {self.last_result.keff_std:.5f}",
-            "",
-            "Parameters:",
-        ]
+        if self.last_result.keff is not None:
+            header = f"k-effective = {self.last_result.keff:.5f} +/- {self.last_result.keff_std:.5f}"
+        else:
+            header = f"Fixed-source run — {len(self.last_result.batches)} batches"
+        lines = [header, "", "Parameters:"]
         for param in self.spec.parameters:
             value = values[param.key]
             text = f"{int(value)}" if param.kind == "int" else f"{value:.{param.decimals}f}"

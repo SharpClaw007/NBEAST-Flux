@@ -56,6 +56,7 @@ class ConvergenceMonitor(QWidget):
         layout.addWidget(caption)
 
         self._batches: list[int] = []
+        self._k_batches: list[int] = []
         self._keffs: list[float] = []
         self._ent_batches: list[int] = []
         self._entropy: list[float] = []
@@ -71,6 +72,7 @@ class ConvergenceMonitor(QWidget):
 
     def reset(self) -> None:
         self._batches.clear()
+        self._k_batches.clear()
         self._keffs.clear()
         self._ent_batches.clear()
         self._entropy.clear()
@@ -93,11 +95,14 @@ class ConvergenceMonitor(QWidget):
             self._inactive_lines.append((plot, line))
 
     def add_point(
-        self, batch: int, keff: float, std: float | None = None, entropy: float | None = None
+        self, batch: int, keff: float | None, std: float | None = None,
+        entropy: float | None = None,
     ) -> None:
         self._batches.append(batch)
-        self._keffs.append(keff)
-        self._k_curve.setData(self._batches, self._keffs)
+        if keff is not None:  # fixed-source runs have no k-effective curve
+            self._k_batches.append(batch)
+            self._keffs.append(keff)
+            self._k_curve.setData(self._k_batches, self._keffs)
         if entropy is not None:
             self._ent_batches.append(batch)
             self._entropy.append(entropy)

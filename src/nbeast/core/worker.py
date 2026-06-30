@@ -78,6 +78,15 @@ def _make_entropy_fn():
     return compute
 
 
+def _read_run_mode() -> str:
+    """Run mode from run_meta.json in the cwd (default eigenvalue)."""
+    try:
+        with open("run_meta.json") as handle:
+            return json.load(handle).get("run_mode", "eigenvalue")
+    except Exception:  # noqa: BLE001
+        return "eigenvalue"
+
+
 def main(argv: list[str]) -> int:
     run_dir = argv[1]
     total_batches = int(argv[2]) if len(argv) > 2 and argv[2] != "None" else None
@@ -93,19 +102,18 @@ def main(argv: list[str]) -> int:
     signal.signal(signal.SIGTERM, _on_term)
     signal.signal(signal.SIGINT, _on_term)
 
+    fixed_source = _read_run_mode() == "fixed source"
+
     try:
         lib.init()
         lib.simulation_init()
-        entropy_fn = _make_entropy_fn()
+        entropy_fn = None if fixed_source else _make_entropy_fn()
         _emit({"type": "start", "batches": total_batches})
         for _ in lib.iter_batches():
-            k = lib.keff()
-            event = {
-                "type": "batch",
-                "batch": lib.current_batch(),
-                "keff": k[0],
-                "keff_std": k[1],
-            }
+            event = {"type": "batch", "batch": lib.current_batch()}
+            if not fixed_source:  # k-eff is meaningless in fixed-source mode
+                k = lib.keff()
+                event["keff"], event["keff_std"] = k[0], k[1]
             if entropy_fn is not None:
                 try:
                     event["entropy"] = entropy_fn(lib.source_bank())
@@ -115,16 +123,19 @@ def main(argv: list[str]) -> int:
             if stop["flag"]:
                 _emit({"type": "cancelled", "batch": lib.current_batch()})
                 break
-        k = lib.keff()
         # Persist a statepoint (with any tallies) so results can be visualised.
         statepoint = os.path.abspath("statepoint.h5")
         try:
             lib.statepoint_write(statepoint)
         except Exception:  # noqa: BLE001
             statepoint = None
+        done = {"type": "done", "statepoint": statepoint}
+        if not fixed_source:
+            k = lib.keff()
+            done["keff"], done["keff_std"] = k[0], k[1]
         lib.simulation_finalize()
         lib.finalize()
-        _emit({"type": "done", "keff": k[0], "keff_std": k[1], "statepoint": statepoint})
+        _emit(done)
         return 0
     except Exception as exc:  # noqa: BLE001
         _emit({"type": "error", "message": str(exc), "trace": traceback.format_exc()})

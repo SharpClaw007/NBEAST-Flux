@@ -101,14 +101,21 @@ def add_entropy_mesh(model: openmc.model.Model, n: int = 8) -> openmc.RegularMes
     return mesh
 
 
+# Reaction-rate + energy-deposition scores carried on the spatial slice mesh, so the
+# Results panel can map each one. All are available from the standard data (no extra
+# library): 'heating' is the KERMA energy-deposition score.
+SLICE_SCORES = ("flux", "fission", "absorption", "nu-fission", "heating")
+
+
 def add_flux_slice_mesh(
     model: openmc.model.Model, n: int = 40, z_half: float = 1.0
 ) -> openmc.RegularMesh:
-    """Add an n×n flux mesh on a central z-slice, sized to the model's geometry.
+    """Add an n×n mesh on a central z-slice, sized to the model's geometry, carrying
+    flux + reaction-rate + heating maps.
 
     Bounds come from the geometry bounding box; infinite axes (e.g. the
     unbounded z of a 2D pin cell) collapse to a thin slab so the result is a
-    clean 2D flux map regardless of template.
+    clean 2D map regardless of template.
     """
     bbox = model.geometry.bounding_box
     lower, upper = bbox.lower_left, bbox.upper_right
@@ -121,5 +128,43 @@ def add_flux_slice_mesh(
     x0, x1 = finite(float(lower[0]), float(upper[0]), 1.0)
     y0, y1 = finite(float(lower[1]), float(upper[1]), 1.0)
     return add_flux_mesh(
-        model, (n, n, 1), (x0, y0, -z_half), (x1, y1, z_half), scores=("flux", "fission")
+        model, (n, n, 1), (x0, y0, -z_half), (x1, y1, z_half), scores=SLICE_SCORES
     )
+
+
+def add_dose_mesh(
+    model: openmc.model.Model,
+    n: int = 40,
+    particle: str = "neutron",
+    geometry: str = "AP",
+    z_half: float = 1.0,
+    name: str = "dose_mesh",
+) -> openmc.RegularMesh:
+    """Add a flux-to-dose-rate mesh (ICRP-116 ambient-dose coefficients).
+
+    An :class:`openmc.EnergyFunctionFilter` weights the flux by the energy-dependent
+    dose conversion factor, so the tally reports dose rate per source particle —
+    the headline result for shielding studies. ``geometry`` is the ICRP irradiation
+    geometry (``AP`` = antero-posterior, the conservative default).
+    """
+    bbox = model.geometry.bounding_box
+    lower, upper = bbox.lower_left, bbox.upper_right
+
+    def finite(lo: float, hi: float, default: float) -> tuple[float, float]:
+        lo = lo if math.isfinite(lo) else -default
+        hi = hi if math.isfinite(hi) else default
+        return lo, hi
+
+    x0, x1 = finite(float(lower[0]), float(upper[0]), 1.0)
+    y0, y1 = finite(float(lower[1]), float(upper[1]), 1.0)
+    mesh = openmc.RegularMesh()
+    mesh.dimension = (n, n, 1)
+    mesh.lower_left = (x0, y0, -z_half)
+    mesh.upper_right = (x1, y1, z_half)
+
+    energies, coeffs = openmc.data.dose_coefficients(particle, geometry)
+    tally = openmc.Tally(name=name)
+    tally.filters = [openmc.MeshFilter(mesh), openmc.EnergyFunctionFilter(energies, coeffs)]
+    tally.scores = ["flux"]
+    _append(model, tally)
+    return mesh

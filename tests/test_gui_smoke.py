@@ -41,10 +41,10 @@ def test_mainwindow_constructs(qapp):
     assert win.tabs.count() == 3  # Convergence + Flux map + Spectrum
 
     win.set_template("Godiva")
-    # Godiva has a single material -> one child under "Materials".
+    # Godiva has a single material plus the editable temperature -> two children.
     materials_node = win.model_tree.topLevelItem(0)
     assert materials_node.text(0) == "Materials"
-    assert materials_node.childCount() == 1
+    assert materials_node.childCount() == 2
     win.close()
 
 

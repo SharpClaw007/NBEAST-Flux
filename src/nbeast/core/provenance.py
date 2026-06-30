@@ -38,6 +38,7 @@ class RunMetadata:
     inactive: int | None = None
     particles: int | None = None
     seed: int | None = None
+    temperature: float | None = None
     threads: str | None = None
     cross_sections: str | None = None
     data_library: str | None = None
@@ -91,13 +92,16 @@ def capture(
         except Exception:  # noqa: BLE001
             cross_sections = None
 
-    batches = inactive = particles = seed = None
+    batches = inactive = particles = seed = temperature = None
     if model is not None and model.settings is not None:
         s = model.settings
         batches = getattr(s, "batches", None)
         inactive = getattr(s, "inactive", None)
         particles = getattr(s, "particles", None)
         seed = getattr(s, "seed", None)
+        temp = getattr(s, "temperature", None)
+        if isinstance(temp, dict):
+            temperature = temp.get("default")
 
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
     return RunMetadata(
@@ -112,6 +116,7 @@ def capture(
         inactive=inactive,
         particles=particles,
         seed=seed,
+        temperature=temperature,
         threads=threads,
         cross_sections=cross_sections,
         data_library=_data_library_label(cross_sections),

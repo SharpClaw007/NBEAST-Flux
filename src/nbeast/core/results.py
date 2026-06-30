@@ -45,19 +45,20 @@ class Diagnostics:
     run passed every heuristic check (``ok`` is True).
     """
 
-    keff: float
-    keff_std: float
+    keff: float | None
+    keff_std: float | None
     n_inactive: int
     n_active: int
     entropy: np.ndarray | None = None          # Shannon entropy per generation
     flux_mean_rel_err: float | None = None      # over signal-carrying mesh cells
     flux_max_rel_err: float | None = None
     warnings: list[str] = field(default_factory=list)
+    run_mode: str = "eigenvalue"
 
     @property
-    def keff_pcm(self) -> float:
+    def keff_pcm(self) -> float | None:
         """k-eff 1-sigma uncertainty in pcm (1e-5 Δk) — the reactor-physics unit."""
-        return self.keff_std * 1.0e5
+        return None if self.keff_std is None else self.keff_std * 1.0e5
 
     @property
     def ok(self) -> bool:
@@ -65,11 +66,14 @@ class Diagnostics:
 
     def summary_lines(self) -> list[str]:
         """Human-readable provenance/quality lines for the report + UI."""
-        lines = [
-            f"k-effective = {self.keff:.5f} +/- {self.keff_std:.5f}  ({self.keff_pcm:.0f} pcm)",
-            f"active / inactive batches = {self.n_active} / {self.n_inactive}",
-        ]
-        if self.flux_mean_rel_err is not None:
+        if self.keff is not None:
+            lines = [
+                f"k-effective = {self.keff:.5f} +/- {self.keff_std:.5f}  ({self.keff_pcm:.0f} pcm)",
+                f"active / inactive batches = {self.n_active} / {self.n_inactive}",
+            ]
+        else:
+            lines = [f"fixed-source run — {self.n_active} batches"]
+        if self.flux_mean_rel_err is not None and self.flux_max_rel_err is not None:
             lines.append(
                 f"flux mesh rel. error = {self.flux_mean_rel_err * 100:.1f}% mean, "
                 f"{self.flux_max_rel_err * 100:.1f}% max"
@@ -123,15 +127,21 @@ class Results:
             return None, None
         return float(rel[signal].mean()), float(rel[signal].max())
 
-    def field_to_vtk(self, path: str | Path, score: str = "flux") -> Path:
+    def field_to_vtk(
+        self, path: str | Path, score: str = "flux",
+        name: str = "flux_mesh", label: str | None = None,
+    ) -> Path:
         """Write a mesh-tally score **and its relative error** to a VTK file (correct
         cell ordering) and return the path. The viewport selects either array by name
-        (``<score>`` or ``<score>_rel_err``)."""
-        tally = self._sp.get_tally(name="flux_mesh")
+        (``<label>`` or ``<label>_rel_err``). ``name`` picks the tally (e.g.
+        ``dose_mesh``); ``label`` overrides the array name (e.g. read ``flux`` from
+        the dose tally but store it as ``dose``)."""
+        tally = self._sp.get_tally(name=name)
         mesh = tally.find_filter(openmc.MeshFilter).mesh
-        mean, _std, rel = self.field_values(score)
+        mean, _std, rel = self.field_values(score, name)
+        label = label or score
         path = Path(path)
-        mesh.write_data_to_vtk(str(path), {score: mean, f"{score}_rel_err": rel})
+        mesh.write_data_to_vtk(str(path), {label: mean, f"{label}_rel_err": rel})
         return path
 
     def flux_mesh_to_vtk(self, path: str | Path) -> Path:
@@ -226,6 +236,10 @@ class Results:
         return ent if ent.size else None
 
     @property
+    def run_mode(self) -> str:
+        return str(getattr(self._sp, "run_mode", "eigenvalue") or "eigenvalue")
+
+    @property
     def n_inactive(self) -> int:
         return int(getattr(self._sp, "n_inactive", 0) or 0)
 
@@ -239,16 +253,25 @@ class Results:
         return arr if arr.size else None
 
     def diagnostics(self) -> Diagnostics:
-        """Roll up uncertainties + source convergence into a trust check."""
-        k = self._sp.keff
-        keff = float(k.nominal_value)
-        keff_std = float(k.std_dev)
+        """Roll up uncertainties + source convergence into a trust check.
+
+        For a fixed-source run there is no k-effective or fission-source convergence,
+        so only the flux uncertainty is assessed.
+        """
+        fixed_source = self.run_mode == "fixed source"
+        keff = keff_std = None
+        if not fixed_source:
+            k = self._sp.keff
+            keff = float(k.nominal_value)
+            keff_std = float(k.std_dev)
         n_inactive = self.n_inactive
         ent = self.entropy()
 
         n_active = 0
         if ent is not None:
             n_active = max(int(ent.size) - n_inactive, 0)
+        elif fixed_source:
+            n_active = int(getattr(self._sp, "n_batches", 0) or 0)
 
         mean_rel = max_rel = None
         try:
@@ -256,9 +279,12 @@ class Results:
         except Exception:  # noqa: BLE001 — no mesh tally is fine
             pass
 
-        warnings = _convergence_warnings(
-            keff_std, ent, n_inactive, n_active, mean_rel, max_rel
-        )
+        if fixed_source:
+            warnings = _fixed_source_warnings(mean_rel)
+        else:
+            warnings = _convergence_warnings(
+                keff_std, ent, n_inactive, n_active, mean_rel, max_rel
+            )
         return Diagnostics(
             keff=keff,
             keff_std=keff_std,
@@ -268,6 +294,7 @@ class Results:
             flux_mean_rel_err=mean_rel,
             flux_max_rel_err=max_rel,
             warnings=warnings,
+            run_mode=self.run_mode,
         )
 
     def close(self) -> None:
@@ -370,6 +397,17 @@ def _write_hdf5(path: Path, arrays: dict, spectrum) -> None:
 _KEFF_PCM_WARN = 200.0     # k-eff 1-sigma above this (pcm) is statistically weak
 _FLUX_RELERR_WARN = 0.20   # >20% mean rel. error => the flux map is mostly noise
 _MIN_INACTIVE = 5          # fewer than this rarely converges the fission source
+
+
+def _fixed_source_warnings(mean_rel: float | None) -> list[str]:
+    """Trust checks for a fixed-source run: only the flux statistics apply."""
+    out: list[str] = []
+    if mean_rel is not None and mean_rel > _FLUX_RELERR_WARN:
+        out.append(
+            f"Flux/dose map is statistically noisy (mean relative error "
+            f"{mean_rel * 100:.0f}%). Increase particles per batch or batches."
+        )
+    return out
 
 
 def _convergence_warnings(

@@ -22,8 +22,8 @@ import openmc
 @dataclass
 class BatchUpdate:
     batch: int
-    keff: float
-    keff_std: float
+    keff: float | None              # None for a fixed-source run
+    keff_std: float | None
     entropy: float | None = None  # Shannon entropy of the fission source (live)
 
 
@@ -54,6 +54,15 @@ def _write_entropy_mesh(model: openmc.model.Model, run_dir: Path) -> None:
         pass
 
 
+def _write_run_meta(model: openmc.model.Model, run_dir: Path) -> None:
+    """Tell the worker the run mode so it knows whether to report k-effective."""
+    run_mode = getattr(model.settings, "run_mode", "eigenvalue") or "eigenvalue"
+    try:
+        (run_dir / "run_meta.json").write_text(json.dumps({"run_mode": run_mode}))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class Runner:
     """Launches the worker subprocess and dispatches its JSON event stream."""
 
@@ -74,6 +83,7 @@ class Runner:
         model.export_to_model_xml(str(run_dir / "model.xml"))
         n_batches = model.settings.batches
         _write_entropy_mesh(model, run_dir)
+        _write_run_meta(model, run_dir)
 
         env = dict(os.environ)
         env["FI_PROVIDER"] = "tcp"
@@ -105,7 +115,7 @@ class Runner:
                     on_start(msg.get("batches"))
             elif kind == "batch":
                 update = BatchUpdate(
-                    msg["batch"], msg["keff"], msg["keff_std"], msg.get("entropy")
+                    msg["batch"], msg.get("keff"), msg.get("keff_std"), msg.get("entropy")
                 )
                 result.batches.append(update)
                 if on_batch:
@@ -113,8 +123,8 @@ class Runner:
             elif kind == "cancelled":
                 result.cancelled = True
             elif kind == "done":
-                result.keff = msg["keff"]
-                result.keff_std = msg["keff_std"]
+                result.keff = msg.get("keff")
+                result.keff_std = msg.get("keff_std")
                 result.statepoint = msg.get("statepoint")
             elif kind == "error":
                 result.error = msg.get("message")
