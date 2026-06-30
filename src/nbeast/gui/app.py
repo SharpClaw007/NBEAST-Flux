@@ -54,8 +54,14 @@ def _sanitize_library_path_and_reexec() -> None:
         return
 
     env[_SANITIZED_FLAG] = "1"
+    # Replay the *original* invocation so the relaunch matches how we were started —
+    # `python -m nbeast.gui.app`, the `nbeast` console script, etc. (sys.orig_argv,
+    # 3.10+). Replaying sys.argv would be wrong under `-m`, where sys.argv[0] is the
+    # module file path and re-running it as a script breaks the package imports.
+    argv = list(getattr(sys, "orig_argv", None)
+                or [sys.executable, "-m", "nbeast.gui.app", *sys.argv[1:]])
     try:
-        os.execve(sys.executable, [sys.executable, *sys.argv], env)
+        os.execve(sys.executable, argv, env)
     except Exception:  # noqa: BLE001 — if re-exec fails, carry on (best-effort)
         os.environ[_SANITIZED_FLAG] = "1"
 
