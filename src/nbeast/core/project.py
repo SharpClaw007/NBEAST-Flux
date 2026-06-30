@@ -88,6 +88,7 @@ class Project:
         self.created_utc: str = _utcnow()
         self.template: str | None = None
         self.param_values: dict[str, dict] = {}
+        self.material_values: dict[str, dict] = {}   # per-template role -> material key
         self.settings: dict = {}            # batches / particles / seed (last used)
         self.runs: list[RunRecord] = []
 
@@ -122,6 +123,7 @@ class Project:
         proj.created_utc = data.get("created_utc", proj.created_utc)
         proj.template = data.get("template")
         proj.param_values = data.get("param_values", {}) or {}
+        proj.material_values = data.get("material_values", {}) or {}
         proj.settings = data.get("settings", {}) or {}
         proj.runs = [RunRecord.from_dict(r) for r in data.get("runs", [])]
         return proj
@@ -141,6 +143,7 @@ class Project:
             "created_utc": self.created_utc,
             "template": self.template,
             "param_values": self.param_values,
+            "material_values": self.material_values,
             "settings": self.settings,
             "runs": [r.to_dict() for r in self.runs],
         }
@@ -155,13 +158,16 @@ class Project:
         *,
         template: str | None = None,
         param_values: dict[str, dict] | None = None,
+        material_values: dict[str, dict] | None = None,
         settings: dict | None = None,
     ) -> None:
-        """Record the current editor state (last template/params/settings) and save."""
+        """Record the current editor state (last template/params/materials/settings)."""
         if template is not None:
             self.template = template
         if param_values is not None:
             self.param_values = {k: dict(v) for k, v in param_values.items()}
+        if material_values is not None:
+            self.material_values = {k: dict(v) for k, v in material_values.items()}
         if settings is not None:
             self.settings = dict(settings)
         self.save()

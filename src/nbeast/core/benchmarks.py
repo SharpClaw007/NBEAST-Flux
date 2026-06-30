@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import openmc
 
-from . import materials, templates
+from . import templates
 
 # Godiva critical radius (ICSBEP HEU-MET-FAST-001), cm.
 GODIVA_RADIUS = 8.7407
@@ -17,12 +17,11 @@ EXPECTED_KEFF = {
 }
 
 
-def godiva(radius: float = GODIVA_RADIUS, **kwargs) -> openmc.model.Model:
+def godiva(radius: float = GODIVA_RADIUS, material: str = "heu_metal_godiva",
+           **kwargs) -> openmc.model.Model:
     """Bare HEU metal sphere; k_eff ~= 1.0 at the benchmark radius. The
-    fast-criticality trust anchor (radius is adjustable for criticality studies)."""
-    return templates.bare_sphere(
-        materials.heu_metal_godiva(), radius=radius, **kwargs
-    )
+    fast-criticality trust anchor (radius and material are adjustable for studies)."""
+    return templates.bare_sphere(material, radius=radius, **kwargs)
 
 
 def pincell(**kwargs) -> openmc.model.Model:

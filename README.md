@@ -65,6 +65,10 @@ arm64 DAGMC/MOAB toolchain that doesn't exist anywhere upstream. See
   geometry overlay — the "science-paper" look, for templates and CAD alike.
 - **Editable parameters** — enrichment, pitch, radii, pins-per-side; what the tree shows is
   exactly what runs.
+- **Swappable materials** — each material slot (fuel, cladding, moderator) is a **searchable
+  dropdown** over a reactor-materials catalog (UO₂, MOX, U metal, steels, graphite, sodium, B₄C,
+  light/heavy water…). Materials runnable with the offline data are usable immediately; the rest are
+  flagged *needs data* and point you to the downloader.
 - **Report & deck export** — a PDF/PNG report (k-eff, parameters, plots) plus CSV and the
   reproducible **OpenMC input deck** that produced it.
 - **Projects & run history** — save your work to a project; every run is **archived and persists

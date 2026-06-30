@@ -14,11 +14,12 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QCompleter,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
@@ -38,7 +39,7 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
 )
 
-from nbeast.core import cad, specs, tallies
+from nbeast.core import cad, materials, specs, tallies
 from nbeast.core.project import Project
 
 from .history import HistoryPanel
@@ -80,6 +81,10 @@ class MainWindow(QMainWindow):
         self._template = next(iter(specs.SPECS))  # "Pin cell"
         # Per-template current parameter values, initialised from defaults.
         self._param_values = {label: spec.defaults() for label, spec in specs.SPECS.items()}
+        # Per-template material selections (role key -> material catalog key).
+        self._material_values = {
+            label: spec.material_defaults() for label, spec in specs.SPECS.items()
+        }
         self._total_batches = 0
         self._statepoint: str | None = None
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
@@ -191,6 +196,7 @@ class MainWindow(QMainWindow):
         values = self.spec.defaults()
         values.update(overrides)
         self._param_values[template] = values
+        self._material_values[template] = self.spec.material_defaults()
         self.quality_combo.setCurrentText(quality)
         self._apply_quality(quality)
         self._refresh_tree()
@@ -389,11 +395,13 @@ class MainWindow(QMainWindow):
         self.model_tree.clear()
         spec = self.spec
 
-        materials = QTreeWidgetItem(["Materials"])
-        for label in spec.materials:
-            materials.addChild(QTreeWidgetItem([label]))
+        materials_item = QTreeWidgetItem(["Materials"])
+        for role in spec.material_roles:
+            mat_key = self._material_values[self._template][role.key]
+            mat_label = materials.LIBRARY[mat_key].label
+            materials_item.addChild(QTreeWidgetItem([f"{role.label}: {mat_label}"]))
         for p in spec.params_in("Materials"):
-            materials.addChild(QTreeWidgetItem([self._value_text(p)]))
+            materials_item.addChild(QTreeWidgetItem([self._value_text(p)]))
 
         geometry = QTreeWidgetItem(["Geometry"])
         geometry.addChild(QTreeWidgetItem([spec.geometry]))
@@ -406,7 +414,7 @@ class MainWindow(QMainWindow):
         settings.addChild(QTreeWidgetItem([f"inactive = {_inactive_for(self.batches_spin.value())}"]))
         settings.addChild(QTreeWidgetItem([f"seed = {self.seed_spin.value()}"]))
 
-        for item in (materials, geometry, settings):
+        for item in (materials_item, geometry, settings):
             self.model_tree.addTopLevelItem(item)
             item.setExpanded(True)
 
@@ -416,31 +424,104 @@ class MainWindow(QMainWindow):
 
     def _on_tree_click(self, item: QTreeWidgetItem, _column: int) -> None:
         group = self._group_of(item)
-        params = self.spec.params_in(group) if group in _GROUPS else []
-        if params:
-            self._render_param_editors(group, params)
+        if group == "Materials":
+            self._render_materials_editors()
+        elif group == "Geometry":
+            params = self.spec.params_in("Geometry")
+            self._render_param_editors("Geometry", params) if params \
+                else self._render_readonly("Geometry")
         else:
             self._render_readonly(group)
+
+    def _make_param_editor(self, p: specs.Parameter):
+        value = self._param_values[self._template][p.key]
+        if p.kind == "int":
+            editor = QSpinBox()
+            editor.setRange(int(p.minimum), int(p.maximum))
+            editor.setSingleStep(int(p.step))
+            editor.setValue(int(value))
+        else:
+            editor = QDoubleSpinBox()
+            editor.setRange(p.minimum, p.maximum)
+            editor.setSingleStep(p.step)
+            editor.setDecimals(p.decimals)
+            editor.setValue(value)
+        editor.valueChanged.connect(lambda v, key=p.key: self.set_param(key, v))
+        return editor
 
     def _render_param_editors(self, group: str, params: list[specs.Parameter]) -> None:
         self.properties.setRowCount(len(params))
         for row, p in enumerate(params):
             label = f"{p.label} ({p.unit})" if p.unit else p.label
             self.properties.setItem(row, 0, QTableWidgetItem(label))
-            value = self._param_values[self._template][p.key]
-            if p.kind == "int":
-                editor = QSpinBox()
-                editor.setRange(int(p.minimum), int(p.maximum))
-                editor.setSingleStep(int(p.step))
-                editor.setValue(int(value))
-            else:
-                editor = QDoubleSpinBox()
-                editor.setRange(p.minimum, p.maximum)
-                editor.setSingleStep(p.step)
-                editor.setDecimals(p.decimals)
-                editor.setValue(value)
-            editor.valueChanged.connect(lambda v, key=p.key: self.set_param(key, v))
-            self.properties.setCellWidget(row, 1, editor)
+            self.properties.setCellWidget(row, 1, self._make_param_editor(p))
+
+    def _render_materials_editors(self) -> None:
+        """Materials panel: a searchable material dropdown per role, then the numeric
+        material parameters (enrichment, temperature)."""
+        roles = self.spec.material_roles
+        params = self.spec.params_in("Materials")
+        available = materials.available_names(self._cross_sections)
+        self.properties.setRowCount(len(roles) + len(params))
+        row = 0
+        for role in roles:
+            self.properties.setItem(row, 0, QTableWidgetItem(role.label))
+            self.properties.setCellWidget(row, 1, self._make_material_combo(role, available))
+            row += 1
+        for p in params:
+            label = f"{p.label} ({p.unit})" if p.unit else p.label
+            self.properties.setItem(row, 0, QTableWidgetItem(label))
+            self.properties.setCellWidget(row, 1, self._make_param_editor(p))
+            row += 1
+
+    def _make_material_combo(self, role, available: set):
+        """A type-to-filter material dropdown for one role; materials whose data isn't
+        in the active library are listed but greyed and marked 'needs data'."""
+        combo = QComboBox()
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.NoInsert)
+        combo.setToolTip(
+            "Type to filter. 'needs data' materials require extra cross sections — "
+            "selecting one offers the downloader (File ▸ Cross-section data…)."
+        )
+        current = self._material_values[self._template][role.key]
+        chosen = 0
+        for i, mspec in enumerate(materials.by_category(role.category)):
+            ok = mspec.is_available(available)
+            combo.addItem(mspec.label if ok else f"{mspec.label} — needs data", mspec.key)
+            if not ok:
+                combo.setItemData(i, QColor("#999"), Qt.ForegroundRole)
+            if mspec.key == current:
+                chosen = i
+        combo.setCurrentIndex(chosen)
+        completer = combo.completer()
+        completer.setCompletionMode(QCompleter.PopupCompletion)
+        completer.setFilterMode(Qt.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        combo.activated.connect(
+            lambda idx, c=combo, rk=role.key: self._on_material_selected(rk, c.itemData(idx))
+        )
+        return combo
+
+    def _on_material_selected(self, role_key: str, mat_key) -> None:
+        if not mat_key:
+            return
+        self._material_values[self._template][role_key] = mat_key
+        self._refresh_tree()
+        mspec = materials.LIBRARY.get(mat_key)
+        if mspec and not mspec.is_available(materials.available_names(self._cross_sections)):
+            self._offer_data_download(mspec)
+
+    def _offer_data_download(self, mspec) -> None:
+        missing = sorted(mspec.required_names() - materials.available_names(self._cross_sections))
+        shown = ", ".join(missing[:8]) + ("…" if len(missing) > 8 else "")
+        resp = QMessageBox.question(
+            self, "Material needs data",
+            f"{mspec.label} needs cross-section data not in the active library:\n  {shown}\n\n"
+            "It won't run until that data is available. Open the data downloader now?",
+        )
+        if resp == QMessageBox.Yes:
+            self._open_data_manager()
 
     def _render_readonly(self, group: str) -> None:
         if group == "Settings":
@@ -466,6 +547,7 @@ class MainWindow(QMainWindow):
             particles=particles,
             inactive=inactive,
             seed=seed,
+            **self._material_values[self._template],
             **self._param_values[self._template],
         )
 
@@ -488,8 +570,26 @@ class MainWindow(QMainWindow):
             tallies.add_entropy_mesh(model)  # fission-source convergence (eigenvalue only)
         return model
 
+    def _unavailable_materials(self) -> list:
+        """Selected materials whose data isn't in the active library (role, spec)."""
+        avail = materials.available_names(self._cross_sections)
+        out = []
+        for role in self.spec.material_roles:
+            mspec = materials.LIBRARY[self._material_values[self._template][role.key]]
+            if not mspec.is_available(avail):
+                out.append((role, mspec))
+        return out
+
     def start_run(self) -> None:
         if self.controller.running:
+            return
+        missing = self._unavailable_materials()
+        if missing:
+            names = ", ".join(m.label for _, m in missing)
+            self.statusBar().showMessage(
+                f"Can't run — {names} need cross-section data. "
+                "Download it via File ▸ Cross-section data…"
+            )
             return
         model = self._build_model()
         self._persist_state()  # remember the current model so reopening restores it
@@ -672,6 +772,7 @@ class MainWindow(QMainWindow):
             self.project.update_state(
                 template=self._template,
                 param_values=self._param_values,
+                material_values=self._material_values,
                 settings=self._current_settings(),
             )
         except Exception:  # noqa: BLE001 — persistence must never break a run
@@ -684,6 +785,9 @@ class MainWindow(QMainWindow):
         for label, values in self.project.param_values.items():
             if label in self._param_values:
                 self._param_values[label].update(values)
+        for label, mats in (self.project.material_values or {}).items():
+            if label in self._material_values:
+                self._material_values[label].update(mats)
         s = self.project.settings or {}
         if "batches" in s:
             self.batches_spin.setValue(int(s["batches"]))
@@ -944,7 +1048,11 @@ class MainWindow(QMainWindow):
             header = f"k-effective = {self.last_result.keff:.5f} +/- {self.last_result.keff_std:.5f}"
         else:
             header = f"Fixed-source run — {len(self.last_result.batches)} batches"
-        lines = [header, "", "Parameters:"]
+        lines = [header, "", "Materials:"]
+        for role in self.spec.material_roles:
+            mat_key = self._material_values[self._template][role.key]
+            lines.append(f"  {role.label} = {materials.LIBRARY[mat_key].label}")
+        lines += ["", "Parameters:"]
         for param in self.spec.parameters:
             value = values[param.key]
             text = f"{int(value)}" if param.kind == "int" else f"{value:.{param.decimals}f}"

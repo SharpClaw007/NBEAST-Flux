@@ -330,6 +330,7 @@ class SweepDialog(QDialog):
         spec = main.spec
         p = self._current_param()
         base = dict(main._param_values[main._template])
+        mats = dict(main._material_values[main._template])
         batches = self.batches_spin.value()
         particles = self.particles_spin.value()
         inactive = _inactive_for(batches)
@@ -339,7 +340,7 @@ class SweepDialog(QDialog):
             params = dict(base)
             params[p.key] = int(round(x)) if p.kind == "int" else x
             return spec.build(batches=batches, particles=particles,
-                              inactive=inactive, seed=seed, **params)
+                              inactive=inactive, seed=seed, **mats, **params)
 
         return builder
 

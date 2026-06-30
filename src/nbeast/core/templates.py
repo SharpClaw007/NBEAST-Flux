@@ -51,22 +51,26 @@ def _apply_temperature(settings: openmc.Settings, temperature: float | None) -> 
 
 
 def pin_cell(
+    fuel: str = "uo2",
+    clad: str = "zircaloy",
+    moderator: str = "water",
     enrichment: float = 3.2,
     pitch: float = 1.26,
     fuel_radius: float = 0.39,
     clad_inner_radius: float = 0.40,
     clad_outer_radius: float = 0.46,
-    with_sab: bool = True,
     batches: int = 100,
     inactive: int = 20,
     particles: int = 2000,
     seed: int | None = None,
     temperature: float | None = None,
 ) -> openmc.model.Model:
-    """PWR-style UO2/water pin cell with reflective boundaries (infinite lattice)."""
-    fuel = materials.uo2(enrichment)
-    clad = materials.zircaloy()
-    mod = materials.water(with_sab=with_sab)
+    """PWR-style pin cell with reflective boundaries (infinite lattice). Fuel, clad,
+    and moderator are chosen by material-catalog key; ``enrichment`` applies only to
+    enrichment-parametric fuels."""
+    fuel = materials.build(fuel, enrichment=enrichment)
+    clad = materials.build(clad)
+    mod = materials.build(moderator)
 
     fuel_or = openmc.ZCylinder(r=fuel_radius)
     clad_ir = openmc.ZCylinder(r=clad_inner_radius)
@@ -100,6 +104,9 @@ def pin_cell(
 
 def assembly(
     n_side: int = 5,
+    fuel: str = "uo2",
+    clad: str = "zircaloy",
+    moderator: str = "water",
     enrichment: float = 3.2,
     pitch: float = 1.26,
     fuel_radius: float = 0.39,
@@ -111,11 +118,11 @@ def assembly(
     seed: int | None = None,
     temperature: float | None = None,
 ) -> openmc.model.Model:
-    """An N×N square lattice of identical PWR pins, reflective boundaries."""
+    """An N×N square lattice of identical pins (materials chosen by catalog key)."""
     n_side = int(n_side)
-    fuel = materials.uo2(enrichment)
-    clad = materials.zircaloy()
-    mod = materials.water()
+    fuel = materials.build(fuel, enrichment=enrichment)
+    clad = materials.build(clad)
+    mod = materials.build(moderator)
 
     fuel_or = openmc.ZCylinder(r=fuel_radius)
     clad_ir = openmc.ZCylinder(r=clad_inner_radius)
@@ -151,8 +158,9 @@ def assembly(
 
 
 def bare_sphere(
-    material: openmc.Material,
+    material: openmc.Material | str,
     radius: float,
+    enrichment: float = 19.75,
     batches: int = 120,
     inactive: int = 20,
     particles: int = 5000,
@@ -160,7 +168,10 @@ def bare_sphere(
     temperature: float | None = None,
 ) -> openmc.model.Model:
     """A bare (vacuum-bounded) sphere of one material — the classic fast-metal
-    criticality geometry (e.g. Godiva, Jezebel)."""
+    criticality geometry (e.g. Godiva, Jezebel). ``material`` may be a catalog key
+    or a ready-built ``openmc.Material``."""
+    if isinstance(material, str):
+        material = materials.build(material, enrichment=enrichment)
     sphere = openmc.Sphere(r=radius, boundary_type="vacuum")
     cell = openmc.Cell(name="core", fill=material, region=-sphere)
     geometry = openmc.Geometry([cell])
@@ -188,6 +199,7 @@ def _fixed_source_settings(
 
 
 def shield_slab(
+    shield: str = "water",
     thickness: float = 30.0,
     source_energy: float = 2.0,
     transverse_half: float = 5.0,
@@ -197,15 +209,15 @@ def shield_slab(
     seed: int | None = None,
     temperature: float | None = None,
 ) -> openmc.model.Model:
-    """A water shield slab with a monoenergetic neutron beam — the canonical
-    fixed-source attenuation/shielding demo.
+    """A shield slab with a monoenergetic neutron beam — the canonical fixed-source
+    attenuation/shielding demo.
 
-    A pencil beam of ``source_energy`` MeV neutrons enters a slab of light water of
-    the given ``thickness`` (cm); transverse boundaries are reflective so the slab is
-    effectively infinite in y and z (a 1-D problem). Pair with the flux and dose-rate
-    meshes to see exponential attenuation through the shield.
+    A pencil beam of ``source_energy`` MeV neutrons enters a slab of the chosen
+    ``shield`` material of the given ``thickness`` (cm); transverse boundaries are
+    reflective so the slab is effectively infinite in y and z (a 1-D problem). Pair
+    with the flux and dose-rate meshes to see exponential attenuation.
     """
-    water = materials.water()
+    water = materials.build(shield)
     w = float(transverse_half)
     front = openmc.XPlane(0.0, boundary_type="vacuum")
     back = openmc.XPlane(thickness, boundary_type="vacuum")

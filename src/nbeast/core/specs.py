@@ -31,17 +31,35 @@ class Parameter:
 
 
 @dataclass(frozen=True)
+class MaterialRole:
+    """An editable material slot in a template (e.g. the fuel, clad, or moderator).
+
+    ``key`` is the build keyword the chosen material-catalog key is passed as;
+    ``category`` selects which materials populate the (searchable) dropdown.
+    """
+
+    key: str          # build kwarg, e.g. "fuel" | "clad" | "moderator" | "material"
+    label: str        # human label, e.g. "Fuel"
+    category: str     # material catalog category to list (materials.by_category)
+    default: str      # default material catalog key
+
+
+@dataclass(frozen=True)
 class TemplateSpec:
     key: str
     label: str
     build: Callable[..., openmc.model.Model]
     parameters: tuple[Parameter, ...]
-    materials: tuple[str, ...]   # display labels for the Materials node
+    materials: tuple[str, ...]   # legacy display labels (unused once roles exist)
     geometry: str                # display label for the Geometry node
     run_mode: str = "eigenvalue"  # "eigenvalue" (k-eff) | "fixed source" (shielding)
+    material_roles: tuple[MaterialRole, ...] = ()
 
     def defaults(self) -> dict[str, float]:
         return {p.key: p.default for p in self.parameters}
+
+    def material_defaults(self) -> dict[str, str]:
+        return {r.key: r.default for r in self.material_roles}
 
     def params_in(self, group: str) -> list[Parameter]:
         return [p for p in self.parameters if p.group == group]
@@ -74,6 +92,11 @@ PIN_CELL = TemplateSpec(
     ),
     materials=("UO₂ fuel", "Zircaloy", "Water"),
     geometry="PWR pin cell (reflective BCs)",
+    material_roles=(
+        MaterialRole("fuel", "Fuel", "fuel", "uo2"),
+        MaterialRole("clad", "Cladding", "cladding", "zircaloy"),
+        MaterialRole("moderator", "Moderator", "moderator", "water"),
+    ),
 )
 
 GODIVA = TemplateSpec(
@@ -87,6 +110,9 @@ GODIVA = TemplateSpec(
     ),
     materials=("HEU metal (Godiva) — fixed composition",),
     geometry="Bare HEU sphere (vacuum BC)",
+    material_roles=(
+        MaterialRole("material", "Core material", "fuel", "heu_metal_godiva"),
+    ),
 )
 
 ASSEMBLY = TemplateSpec(
@@ -110,6 +136,11 @@ ASSEMBLY = TemplateSpec(
     ),
     materials=("UO₂ fuel", "Zircaloy", "Water"),
     geometry="N×N PWR fuel assembly (reflective BCs)",
+    material_roles=(
+        MaterialRole("fuel", "Fuel", "fuel", "uo2"),
+        MaterialRole("clad", "Cladding", "cladding", "zircaloy"),
+        MaterialRole("moderator", "Moderator", "moderator", "water"),
+    ),
 )
 
 SHIELD = TemplateSpec(
@@ -126,6 +157,9 @@ SHIELD = TemplateSpec(
     materials=("Light water shield",),
     geometry="Water slab — neutron beam (reflective sides, vacuum ends)",
     run_mode="fixed source",
+    material_roles=(
+        MaterialRole("shield", "Shield material", "moderator", "water"),
+    ),
 )
 
 SPECS: dict[str, TemplateSpec] = {s.label: s for s in (PIN_CELL, GODIVA, ASSEMBLY, SHIELD)}
