@@ -179,6 +179,9 @@ class FluxViewport(QWidget):
     def _ensure_interactor(self):
         from pyvistaqt import QtInteractor
 
+        from ._vtkquiet import quiet
+
+        quiet()
         if self._interactor is None:
             self._interactor = QtInteractor(self)
             self._layout.insertWidget(0, self._interactor)  # above the caption

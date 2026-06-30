@@ -233,8 +233,16 @@ class Results:
 
     # ---- convergence + trust ---------------------------------------------
     def entropy(self):
-        """Shannon entropy of the fission source per generation, or None if not recorded."""
-        ent = getattr(self._sp, "entropy", None)
+        """Shannon entropy of the fission source per generation, or None if not recorded.
+
+        ``StatePoint.entropy`` raises (KeyError) rather than returning None when the
+        run had no entropy mesh, so guard for it — keeps diagnostics working for
+        fixed-source runs and any run without the diagnostic enabled.
+        """
+        try:
+            ent = self._sp.entropy
+        except (KeyError, AttributeError):
+            return None
         if ent is None:
             return None
         ent = np.asarray(ent, dtype=float).ravel()

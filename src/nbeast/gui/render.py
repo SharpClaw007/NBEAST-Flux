@@ -19,6 +19,9 @@ def flat_flux_surface(vtk_path):
     """
     import pyvista as pv
 
+    from ._vtkquiet import quiet
+
+    quiet()
     grid = pv.read(str(vtk_path))
     return grid.slice(normal="z")
 
@@ -41,6 +44,9 @@ def draw_tracks(plotter, polylines) -> None:
     """Add particle-track polylines to a plotter, coloured by energy (log scale)."""
     import pyvista as pv
 
+    from ._vtkquiet import quiet
+
+    quiet()
     energies = [pl["energy"] for pl in polylines]
     emin = max(min(float(e.min()) for e in energies), 1e-5)
     emax = max(max(float(e.max()) for e in energies), emin * 10.0)
