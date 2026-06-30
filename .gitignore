@@ -23,3 +23,6 @@ packaging/construct.yaml
 
 # Stage F: assembled CAD channel artifacts (published as release assets, not committed)
 packaging/cad-support/channel/
+
+# Generated double-click launcher (machine-specific absolute paths; build with packaging/make_macos_app.sh)
+NBEAST.app/

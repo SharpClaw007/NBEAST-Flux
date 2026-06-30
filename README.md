@@ -252,10 +252,22 @@ python spikes/fetch_data.py data
 export OPENMC_CROSS_SECTIONS="$PWD/data/cross_sections.xml"
 
 pytest          # regression tests
-./launch.sh     # run the app from source
+./launch.sh     # run the app from source (terminal stays open for logs)
 ```
 
-Building installers and cutting releases: see [`packaging/RELEASE.md`](packaging/RELEASE.md).
+**Prefer to double-click?** Build a thin macOS app bundle that launches NBEAST from
+your conda env with no Terminal window:
+
+```sh
+./packaging/make_macos_app.sh      # creates ./NBEAST.app (icon from the flux render)
+```
+
+Then drag `NBEAST.app` to `/Applications` or the Dock, or launch it from Spotlight
+(⌘-Space → "NBEAST"). It's a launcher, not a standalone bundle — re-run the script if
+you move the repo or recreate the env. (First open may need right-click → Open, since
+it's unsigned.)
+
+Building standalone installers and cutting releases: see [`packaging/RELEASE.md`](packaging/RELEASE.md).
 
 ## Contributing
 
