@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import tempfile
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import Qt, QObject, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -109,10 +109,13 @@ class CadImportDialog(QDialog):
 
         split.addLayout(left, 2)
 
-        from .viewport3d import FluxViewport
-        self.preview3d = FluxViewport()
-        self.preview3d.setMinimumWidth(430)
-        split.addWidget(self.preview3d, 3)
+        # The preview is rendered OFF-SCREEN to an image rather than a live VTK widget:
+        # a live Cocoa GL view segfaults on teardown under Rosetta when the dialog closes.
+        self.preview_label = QLabel("Pick a STEP file to see the colour-coded preview.")
+        self.preview_label.setAlignment(Qt.AlignCenter)
+        self.preview_label.setMinimumSize(440, 380)
+        self.preview_label.setStyleSheet("background: white; color: #888; border: 1px solid #ddd;")
+        split.addWidget(self.preview_label, 3)
         layout.addLayout(split, 1)
 
         buttons = QHBoxLayout()
@@ -248,8 +251,47 @@ class CadImportDialog(QDialog):
     def _render_preview(self) -> None:
         if not self._stls:
             return
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen":   # headless tests
+            self.preview_label.setText(f"Preview: {len(self._stls)} solid(s).")
+            return
+        try:
+            self.preview_label.setPixmap(self._offscreen_pixmap())
+        except Exception as exc:  # noqa: BLE001 — a preview must never take the app down
+            self.preview_label.setText(f"Preview unavailable: {exc}")
+
+    def _offscreen_pixmap(self):
+        """Render the coloured solids + legend to an image (no live GL widget = no
+        Cocoa-teardown segfault). Returns a QPixmap."""
+        import numpy as np
+        import pyvista as pv
+        from PySide6.QtGui import QImage, QPixmap
+
+        from ._vtkquiet import quiet
+        from .viewport3d import FluxViewport
+
+        quiet()
         colors, labels = self._colors_labels()
-        self.preview3d.show_cad(self._stls, colors, title="CAD geometry", labels=labels)
+        w = max(self.preview_label.width(), 440)
+        h = max(self.preview_label.height(), 380)
+        plotter = pv.Plotter(off_screen=True, window_size=[w, h])
+        plotter.background_color = "white"
+        try:
+            for i, path in enumerate(self._stls):
+                color = colors[i] if i < len(colors) else "lightgray"
+                plotter.add_mesh(pv.read(path), color=color, show_edges=True, opacity=0.85)
+            entries = FluxViewport._material_legend_entries(colors, labels)
+            if entries:
+                plotter.add_legend(
+                    [[text, col] for text, col in entries], bcolor="white", border=True,
+                    face="rectangle", size=(0.30, 0.04 + 0.05 * len(entries)), loc="upper left",
+                )
+            plotter.view_isometric()
+            img = np.ascontiguousarray(plotter.screenshot(return_img=True))
+        finally:
+            plotter.close()
+        hh, ww = img.shape[:2]
+        qimg = QImage(img.data, ww, hh, 3 * ww, QImage.Format_RGB888)
+        return QPixmap.fromImage(qimg.copy())
 
     def _recolor_row(self, row: int) -> None:
         """Tint the Solid cell with its material colour so the table maps to the 3-D view."""
@@ -304,5 +346,4 @@ class CadImportDialog(QDialog):
 
     def closeEvent(self, event) -> None:
         self._teardown()             # stop any worker thread before we're destroyed
-        self.preview3d.finalize()    # release the embedded VTK interactor (else segfault)
-        super().closeEvent(event)
+        super().closeEvent(event)    # no live GL widget to finalize — preview is off-screen
