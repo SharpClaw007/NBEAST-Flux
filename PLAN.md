@@ -371,6 +371,32 @@ proof" layer landed end to end and is validated against a real Godiva run (54 te
 - **App name / branding / aesthetic** — later.
 - **macOS signing** — Apple Developer ID vs unsigned-with-instructions (defer to Phase 5).
 
-## Immediate next step
-Install OpenMC locally (conda-forge), `git init` the repo, and run Phase 0 Spike A:
-prove a pin cell runs headless from a bundled environment on this Mac.
+## Status (current)
+Research-grade offline GUI, all working; **180 tests pass** (`pytest -q`). Commit + push to
+`main` after each task. **No `Co-Authored-By: Claude` trailer** (author `juanq <jr101@rice.edu>`).
+Never commit cross-section data (`data/` gitignored; downloads local-only). Test env:
+`env -u DYLD_LIBRARY_PATH OPENMC_CROSS_SECTIONS=.../data/cross_sections.xml FI_PROVIDER=tcp QT_QPA_PLATFORM=offscreen`;
+dev python `~/miniforge3/envs/nbeast/bin/python`. App = `NBEAST.app` (thin launcher → editable
+`nbeast` console script, so `src/` edits flow in live). Bundle carries only H/O/U/Zr.
+
+**Built this session (newest first):**
+- **Data Library** (`gui/data_library.py`, `core/data.py`) — one window, replaces the scattered
+  downloader/poison/depletion entry points (`data_manager.py` retired). Categories by material use +
+  Poisons + Depletion + **All elements** (full 97-element / 556-nuclide periodic table, each
+  element expands lazily → its isotopes + the materials that use it). Real **cached size table**
+  (`core/data_sizes.json`, probed HEAD sizes; Everything ≈ 5 GB). Per-item/category/all download,
+  import `.h5`/xml, per-element **delete** (downloaded items live in their category, not a top block).
+- **Material dropdowns**: list every *installed* material cross-category (any material → any slot),
+  no greyed "needs data" entries. Added **Plutonium metal (Jezebel)** fuel.
+- **Results 2D/3D**: separate list entries per field; z-uniform templates extrude the slice to 3D,
+  CAD renders volumetric on the geometry, Godiva uses its real 3D flux.
+- **CAD**: off-screen colour-coded preview (Rosetta GL teardown crash fixed), box fission source
+  (off-origin geometry), all fields volumetric.
+- **Analysis tab** (was a menu); **moderation curve**; **reactor poisoning** (Xe/Sm, validated);
+  **units** (SI/US + optional reactor-power/source-strength → absolute, validated to PWR scale).
+
+**Deferred / open:**
+- Account-gated: **Zenodo DOI + JOSS** submission (parked, needs user accounts).
+- Depletion "download" in the Data Library **links to the setup dialog** (not fully inline).
+- CAD: no report export yet (use raw-data export); CAD config not persisted across launches.
+- Delete granularity is per-element (not per-isotope) — intentional.
