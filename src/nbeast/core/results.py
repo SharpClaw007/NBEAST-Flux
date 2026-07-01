@@ -220,6 +220,28 @@ class Results:
         mean, dims, lower, upper, _rel = self.field_volume("flux")
         return mean, dims, lower, upper
 
+    def field_extruded_volume(self, score: str = "flux", name: str = "flux_mesh",
+                              nz: int | None = None):
+        """Build a 3D volume by extruding a 2D slice field across z. **Exact** for
+        z-invariant (reflective/infinite-z) geometries, where the flux doesn't vary
+        with height. Returns (values, dims, lower_left, upper_right, rel_err).
+
+        The mesh flat ordering is x-fastest, so tiling the slice ``nz`` times lays each
+        z-layer down correctly. The display height is set to the in-plane extent so the
+        block is well-proportioned (z is physically arbitrary — the field is uniform)."""
+        tally = self._sp.get_tally(name=name)
+        mesh = tally.find_filter(openmc.MeshFilter).mesh
+        nx, ny = int(mesh.dimension[0]), int(mesh.dimension[1])
+        nz = nz or nx
+        mean = _finite(tally.get_values(scores=[score]).ravel())
+        std = _finite(tally.get_values(scores=[score], value="std_dev").ravel())
+        rel = np.divide(std, mean, out=np.zeros_like(mean), where=mean > 0)
+        lx, ly = float(mesh.lower_left[0]), float(mesh.lower_left[1])
+        ux, uy = float(mesh.upper_right[0]), float(mesh.upper_right[1])
+        half = max(ux - lx, uy - ly) / 2.0
+        return (np.tile(mean, nz), (nx, ny, nz), (lx, ly, -half), (ux, uy, half),
+                np.tile(rel, nz))
+
     def field_volume(self, score: str = "flux", name: str = "flux_volume"):
         """A 3D mesh-tally score for volumetric rendering:
         (mean, dims, lower_left, upper_right, rel_err). Non-finite values → 0."""

@@ -261,6 +261,26 @@ def test_power_normalization_gives_absolute_flux(tmp_path, monkeypatch):
 
 
 @requires_data
+def test_field_extruded_volume_is_exact_z_uniform(tmp_path, monkeypatch):
+    """A z-invariant (infinite-z) pin cell's slice extrudes to a 3D block where every
+    z-layer is identical — i.e. the reconstruction is exact, not an approximation."""
+    import numpy as np
+
+    from nbeast.core import results, tallies, templates
+
+    monkeypatch.chdir(tmp_path)
+    m = templates.pin_cell(batches=30, inactive=8, particles=1200, seed=1)
+    tallies.add_flux_slice_mesh(m, n=20)
+    sp = m.run(output=False, cwd=str(tmp_path))
+    with results.Results(sp) as r:
+        vals, dims, lower, upper, _rel = r.field_extruded_volume("flux", "flux_mesh")
+        assert dims == (20, 20, 20) and vals.size == 8000
+        layers = vals.reshape(dims[2], dims[1], dims[0])  # (k, j, i) from x-fastest flat
+        assert np.allclose(layers[0], layers[-1])          # every z-layer identical
+        assert upper[2] > lower[2]                          # a real display z-extent
+
+
+@requires_data
 def test_mgxs_generation(tmp_path, monkeypatch):
     from nbeast.core import mgxs_gen, templates
 

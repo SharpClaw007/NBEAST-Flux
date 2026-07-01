@@ -91,6 +91,7 @@ class MainWindow(QMainWindow):
         self._cad_dialog = None   # the non-modal CAD import panel, when open
         self._cad_result = False  # current results are from a CAD run (render volumetric)
         self._cad_overlay = None  # (stls, colors, labels) geometry to overlay on CAD fields
+        self._current_field_score = "flux"  # last field shown (for the 2D/3D toggle)
         self._unit_system = "SI"  # display units (SI / US-Imperial)
         self._power_w = 0.0       # reactor power (eigenvalue) for absolute units; 0 = relative
         self._source_strength = 0.0  # source rate n/s (fixed source) for absolute units
@@ -333,6 +334,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.monitor = ConvergenceMonitor()
         self.flux_view = FluxViewport()
+        self.flux_view.view3d_check.toggled.connect(self._on_view3d_toggled)
         self.spectrum_view = SpectrumView()
         self.tabs.addTab(self.monitor, "Convergence")
         self.tabs.addTab(self.flux_view, "Flux map")
@@ -904,7 +906,16 @@ class MainWindow(QMainWindow):
         if not self._statepoint:
             return
         if self._cad_result:   # CAD is 3-D — render volumetrically on the geometry
+            self.flux_view.view3d_check.setVisible(False)
             self._show_cad_field(score, switch_tab)
+            return
+        self._current_field_score = score
+        # The "View in 3D" toggle is offered only where the slice extrudes exactly (a
+        # z-uniform geometry). When on, render the extruded 3D block instead of the slice.
+        supports_3d = self.spec is not None and self.spec.z_invariant
+        self.flux_view.view3d_check.setVisible(supports_3d)
+        if supports_3d and self.flux_view.view3d_check.isChecked():
+            self._show_extruded_field(score, switch_tab)
             return
         from nbeast.core.results import Results
 
@@ -930,6 +941,39 @@ class MainWindow(QMainWindow):
             self._show_volume()
         else:
             self._show_field(score, switch_tab=True)
+
+    def _on_view3d_toggled(self, _checked: bool) -> None:
+        """Re-render the current field in the chosen 2D/3D mode."""
+        if self._statepoint and not self._cad_result and self.results_list.isEnabled():
+            self._show_field(self._current_field_score, switch_tab=False)
+
+    def _show_extruded_field(self, score: str, switch_tab: bool = True) -> None:
+        """Render a z-invariant template field as a 3-D block by extruding its 2D slice
+        across z (exact for infinite/reflective-z geometries)."""
+        if not self._statepoint:
+            return
+        import numpy as np
+
+        from nbeast.core.results import Results
+
+        tally_name, tally_score, _label = self._field_source(score)
+        try:
+            with Results(self._statepoint) as results:
+                values, dims, lower, upper, rel = results.field_extruded_volume(
+                    tally_score, tally_name)
+                scale = self._display_scale(results, score, tally_name)
+            if score.endswith("_rel_err"):
+                arr, log = rel, False
+            else:
+                arr, log = np.asarray(values, dtype=float) * scale, True
+            self.flux_view.show_field_volume(
+                arr, dims, lower, upper, log=log,
+                bar_title=self._field_bar_title(score), title=FIELD_TITLES.get(score, score),
+            )
+            if switch_tab:
+                self.tabs.setCurrentWidget(self.flux_view)
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
 
     def _show_cad_field(self, score: str, switch_tab: bool = True) -> None:
         """Render a CAD result field as a 3-D volume on the semi-transparent geometry."""

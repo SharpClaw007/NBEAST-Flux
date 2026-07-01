@@ -54,6 +54,7 @@ class TemplateSpec:
     geometry: str                # display label for the Geometry node
     run_mode: str = "eigenvalue"  # "eigenvalue" (k-eff) | "fixed source" (shielding)
     material_roles: tuple[MaterialRole, ...] = ()
+    z_invariant: bool = False    # infinite/reflective in z → the 2D slice extrudes exactly to 3D
 
     def defaults(self) -> dict[str, float]:
         return {p.key: p.default for p in self.parameters}
@@ -92,6 +93,7 @@ PIN_CELL = TemplateSpec(
     ),
     materials=("UO₂ fuel", "Zircaloy", "Water"),
     geometry="PWR pin cell (reflective BCs)",
+    z_invariant=True,
     material_roles=(
         MaterialRole("fuel", "Fuel", "fuel", "uo2"),
         MaterialRole("clad", "Cladding", "cladding", "zircaloy"),
@@ -136,6 +138,7 @@ ASSEMBLY = TemplateSpec(
     ),
     materials=("UO₂ fuel", "Zircaloy", "Water"),
     geometry="N×N PWR fuel assembly (reflective BCs)",
+    z_invariant=True,
     material_roles=(
         MaterialRole("fuel", "Fuel", "fuel", "uo2"),
         MaterialRole("clad", "Cladding", "cladding", "zircaloy"),
@@ -157,6 +160,7 @@ SHIELD = TemplateSpec(
     materials=("Light water shield",),
     geometry="Water slab — neutron beam (reflective sides, vacuum ends)",
     run_mode="fixed source",
+    z_invariant=True,
     material_roles=(
         MaterialRole("shield", "Shield material", "moderator", "water"),
     ),

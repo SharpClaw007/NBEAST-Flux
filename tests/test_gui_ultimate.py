@@ -234,6 +234,32 @@ def test_field_bar_title_relative_by_default(qapp, tmp_path):
     win.close()
 
 
+def test_view3d_toggle_only_for_z_invariant_templates(qapp, tmp_path):
+    """The 2D→3D extrusion toggle is offered only where it's exact (z-uniform geometry),
+    and when enabled routes fields through the extruded 3D renderer."""
+    win = _win(tmp_path)
+    win._statepoint = "sp.h5"
+    win.results_list.setEnabled(True)
+    extruded = []
+    win._show_extruded_field = lambda score, switch_tab=True: extruded.append(score)
+
+    # Godiva — a true 3D sphere: no exact extrusion, so no toggle
+    win.set_template("Godiva")
+    _reset_materials(win)
+    win._show_field("flux")
+    assert win.flux_view.view3d_check.isHidden()
+
+    # Pin cell — z-uniform: toggle offered; enabling it routes fields to 3D
+    win.set_template("Pin cell")
+    _reset_materials(win)
+    win._show_field("flux")
+    assert not win.flux_view.view3d_check.isHidden()
+    win.flux_view.view3d_check.setChecked(True)
+    win._show_field("fission")
+    assert "fission" in extruded
+    win.close()
+
+
 def test_load_examples_and_history(qapp, tmp_path):
     win = _win(tmp_path)
     for key in ("godiva", "pincell", "assembly", "shield"):
