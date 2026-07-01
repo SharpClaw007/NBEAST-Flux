@@ -36,6 +36,36 @@ def test_dialog_constructs_and_populates(qapp):
     dialog.close()
 
 
+def test_autoinspect_no_manual_inspect_button(qapp):
+    """Importing a CAD file should go straight to material selection — the manual
+    Inspect button is hidden and inspection auto-triggers."""
+    from nbeast.gui.cad_import import CadImportDialog
+
+    dialog = CadImportDialog(cross_sections=None)
+    assert dialog.inspect_btn.isHidden()
+    dialog.step_edit.setText("/no/such/file.step")
+    dialog._inspect()
+    assert "does not exist" in dialog.status.text()   # graceful, no crash
+    dialog.step_edit.setText("")
+    dialog._inspect()                                  # empty path is a no-op
+    dialog.close()
+
+
+def test_cad_dialog_is_nonmodal_single_instance(qapp, tmp_path):
+    """The CAD panel is non-modal (so the main 3D viewport stays live for previews,
+    which otherwise crashes the GL context) and only one opens at a time."""
+    from nbeast.gui.main_window import MainWindow
+
+    win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "p")
+    win._open_cad_import()
+    assert win._cad_dialog is not None and not win._cad_dialog.isModal()
+    first = win._cad_dialog
+    win._open_cad_import()
+    assert win._cad_dialog is first                    # reused, not stacked
+    win.close()                                        # closeEvent tears it down
+    assert win._cad_dialog is None
+
+
 def test_setup_dialog_constructs(qapp):
     from nbeast.gui.cad_setup import CadSetupDialog
 

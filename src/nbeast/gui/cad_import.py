@@ -67,16 +67,19 @@ class CadImportDialog(QDialog):
             "as DAGMC geometry — natively on Apple Silicon."
         ))
 
-        # STEP file picker
+        # STEP file picker — inspection is automatic once a file is chosen.
+        self._inspected_path = None
         picker = QHBoxLayout()
         self.step_edit = QLineEdit()
         self.step_edit.setPlaceholderText("path to a .step / .stp file")
+        self.step_edit.editingFinished.connect(self._inspect)
         picker.addWidget(self.step_edit, 1)
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse)
         picker.addWidget(browse)
-        self.inspect_btn = QPushButton("Inspect")
+        self.inspect_btn = QPushButton("Inspect")  # kept for _set_busy; auto-triggered
         self.inspect_btn.clicked.connect(self._inspect)
+        self.inspect_btn.hide()
         picker.addWidget(self.inspect_btn)
         layout.addLayout(picker)
 
@@ -123,6 +126,7 @@ class CadImportDialog(QDialog):
         path, _ = QFileDialog.getOpenFileName(self, "Select STEP file", "", "STEP (*.step *.stp)")
         if path:
             self.step_edit.setText(path)
+            self._inspect()   # auto-inspect: go straight to material selection
 
     def _material_combo(self) -> QComboBox:
         combo = QComboBox()
@@ -154,16 +158,23 @@ class CadImportDialog(QDialog):
 
     # ---- inspect ---------------------------------------------------------
     def _inspect(self) -> None:
+        if self._thread is not None:   # already busy (inspecting or running)
+            return
         path = self.step_edit.text().strip()
-        if not path or not os.path.exists(path):
+        if not path:
+            return
+        if not os.path.exists(path):
             self.status.setText("That STEP file does not exist.")
             return
+        if path == self._inspected_path and self.table.rowCount() > 0:
+            return   # already inspected this file
         self._set_busy(True, "Inspecting STEP file…")
         self._start(lambda: cad.inspect_step(path), self._on_inspected)
 
     @Slot(object)
     def _on_inspected(self, info) -> None:
         self._teardown()
+        self._inspected_path = self.step_edit.text().strip()
         # inspect_step returns a dict; the UI unit test passes a bare count.
         n_solids = info["n_solids"] if isinstance(info, dict) else int(info)
         extent = info.get("extent") if isinstance(info, dict) else None

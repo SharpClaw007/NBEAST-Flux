@@ -88,6 +88,7 @@ class MainWindow(QMainWindow):
         }
         # Custom-CAD template state (populated by the CAD import dialog).
         self._cad = {"step": None, "materials": []}
+        self._cad_dialog = None   # the non-modal CAD import panel, when open
         self._total_batches = 0
         self._statepoint: str | None = None
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
@@ -1070,6 +1071,11 @@ class MainWindow(QMainWindow):
     def _open_cad_import(self) -> None:
         from .cad_import import CadImportDialog
 
+        # Reuse an already-open panel rather than stacking dialogs.
+        if getattr(self, "_cad_dialog", None) is not None:
+            self._cad_dialog.raise_()
+            self._cad_dialog.activateWindow()
+            return
         dialog = CadImportDialog(cross_sections=self._cross_sections, parent=self)
         # Seed the dialog's run quality from the model tree's Settings, so those
         # settings aren't decorative for the CAD template.
@@ -1077,7 +1083,13 @@ class MainWindow(QMainWindow):
         dialog.particles.setValue(self.particles_spin.value())
         dialog.completed.connect(self._on_cad_completed)
         dialog.preview.connect(self._show_cad_preview)
-        dialog.exec()
+        dialog.finished.connect(lambda _=0: setattr(self, "_cad_dialog", None))
+        self._cad_dialog = dialog
+        # Non-modal: the main window's 3D viewport must stay live so previews and
+        # results can render into it. Rendering to it while a *modal* dialog blocks
+        # the event loop crashes the GL context on macOS.
+        dialog.setModal(False)
+        dialog.show()
 
     def _on_cad_completed(self, res: dict) -> None:
         from nbeast.core.runner import RunResult
@@ -1102,24 +1114,27 @@ class MainWindow(QMainWindow):
             self.spectrum_view.set_spectrum(res["energy_edges"], res["flux"])
 
         # Publication 3D volume render with the geometry overlay (the CAD headline).
+        # Switch to the viewport tab first so its GL widget is mapped before rendering.
         if res.get("flux_volume") and res.get("vol_bounds"):
             b = res["vol_bounds"]
+            self.tabs.setCurrentWidget(self.flux_view)
             self.flux_view.show_field_volume(
                 res["flux_volume"], res["vol_dims"], (b[0], b[1], b[2]), (b[3], b[4], b[5]),
                 stls=res.get("stls"), colors=res.get("colors"), title="CAD scalar flux",
             )
-            self.tabs.setCurrentWidget(self.flux_view)
         elif not sp and res.get("flux_map") and res.get("map_bounds"):
             b = res["map_bounds"]
+            self.tabs.setCurrentWidget(self.flux_view)
             self.flux_view.show_field_array(
                 res["flux_map"], (b[0], b[1]), (b[2], b[3]), title="CAD flux map"
             )
-            self.tabs.setCurrentWidget(self.flux_view)
 
     def _show_cad_preview(self, stls, colors) -> None:
         """Render imported CAD solids (coloured by material) in the 3D viewport."""
-        self.flux_view.show_cad(stls, colors, title="CAD geometry")
+        # Make the viewport the visible tab BEFORE rendering, so its GL widget is
+        # mapped when the VTK interactor is (lazily) created — else it can segfault.
         self.tabs.setCurrentWidget(self.flux_view)
+        self.flux_view.show_cad(stls, colors, title="CAD geometry")
 
     def _open_cad_setup(self) -> None:
         from .cad_setup import CadSetupDialog
@@ -1200,4 +1215,6 @@ class MainWindow(QMainWindow):
         # Remember the current model, and don't leave a worker subprocess running.
         self._persist_state()
         self.controller.stop_and_wait()
+        if getattr(self, "_cad_dialog", None) is not None:
+            self._cad_dialog.close()
         super().closeEvent(event)
