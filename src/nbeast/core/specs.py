@@ -78,7 +78,7 @@ PIN_CELL = TemplateSpec(
     label="Pin cell",
     build=templates.pin_cell,
     parameters=(
-        Parameter("enrichment", "U-235 enrichment", 3.2, 0.1, 100.0,
+        Parameter("enrichment", "U-235 enrichment", 3.2, 0.1, 95.0,
                   step=0.1, decimals=2, unit="wt%", group="Materials"),
         Parameter("pitch", "Lattice pitch", 1.26, 0.40, 5.0,
                   step=0.01, decimals=3, unit="cm", group="Geometry"),
@@ -122,7 +122,7 @@ ASSEMBLY = TemplateSpec(
     parameters=(
         Parameter("n_side", "Pins per side", 5, 2, 17,
                   step=1, kind="int", group="Geometry"),
-        Parameter("enrichment", "U-235 enrichment", 3.2, 0.1, 100.0,
+        Parameter("enrichment", "U-235 enrichment", 3.2, 0.1, 95.0,
                   step=0.1, decimals=2, unit="wt%", group="Materials"),
         Parameter("pitch", "Pin pitch", 1.26, 0.40, 5.0,
                   step=0.01, decimals=3, unit="cm", group="Geometry"),

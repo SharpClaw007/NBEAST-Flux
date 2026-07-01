@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -65,12 +66,16 @@ class _SweepWorker(QObject):
             self.failed.emit(str(exc))
 
     def _evaluate(self, x: float, index: int) -> tuple[float, float] | None:
-        self._runner = Runner(cross_sections=self._cross_sections)
-        model = self._builder(x)
-        result = self._runner.run(model, self._run_root / f"pt{index:03d}")
-        if result.error:
-            raise RuntimeError(result.error)
-        if result.cancelled or result.keff is None:
+        """Evaluate k at one parameter value, or None if it couldn't be run (an
+        invalid configuration builds/fails without killing the whole sweep)."""
+        try:
+            self._runner = Runner(cross_sections=self._cross_sections)
+            model = self._builder(x)
+            result = self._runner.run(model, self._run_root / f"pt{index:03d}")
+        except Exception as exc:  # noqa: BLE001 — bad config for this point only
+            self.progress.emit(f"Skipped {x:g}: {exc}")
+            return None
+        if result.error or result.cancelled or result.keff is None:
             return None
         return float(result.keff), float(result.keff_std or 0.0)
 
@@ -82,7 +87,9 @@ class _SweepWorker(QObject):
             self.progress.emit(f"Run {i + 1}/{len(values)}: {x:g}")
             ev = self._evaluate(x, i)
             if ev is None:
-                break
+                if self._stop:
+                    break
+                continue  # skip a point that couldn't be evaluated, keep going
             k, std = ev
             points.append((x, k, std))
             self.point.emit(x, k, std)
@@ -90,6 +97,7 @@ class _SweepWorker(QObject):
 
     def _run_search(self, search: CriticalitySearch) -> None:
         i = 0
+        failed = False
         while not self._stop:
             x = search.propose()
             if x is None:
@@ -97,6 +105,7 @@ class _SweepWorker(QObject):
             self.progress.emit(f"Search eval {i + 1}: {x:g}")
             ev = self._evaluate(x, i)
             if ev is None:
+                failed = not self._stop  # an unevaluable point breaks the search
                 break
             k, std = ev
             search.submit(x, k)
@@ -105,6 +114,7 @@ class _SweepWorker(QObject):
         summary = dict(search.solution)
         summary["mode"] = "search"
         summary["stopped"] = self._stop
+        summary["failed"] = failed
         self.finished.emit(summary)
 
     def cancel(self) -> None:
@@ -192,63 +202,100 @@ class SweepDialog(QDialog):
         self._on_mode_changed()
 
     # ---- UI ---------------------------------------------------------------
+    @staticmethod
+    def _compact_form() -> QFormLayout:
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)  # don't stretch fields
+        form.setLabelAlignment(Qt.AlignRight)
+        form.setContentsMargins(10, 8, 10, 8)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(6)
+        return form
+
+    @staticmethod
+    def _hug(group: QGroupBox) -> QGroupBox:
+        group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)  # hug content
+        return group
+
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.setSpacing(8)
 
-        form = QFormLayout()
+        # --- setup row: parameter + mode side by side ---
+        top = QHBoxLayout()
         self.param_combo = QComboBox()
         self._params = list(self.main.spec.parameters)
         for p in self._params:
             self.param_combo.addItem(f"{p.label} ({p.unit})" if p.unit else p.label, p.key)
         self.param_combo.currentIndexChanged.connect(self._on_param_changed)
-        form.addRow("Parameter:", self.param_combo)
-
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["Sweep", "Criticality search"])
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        form.addRow("Mode:", self.mode_combo)
-        layout.addLayout(form)
+        top.addWidget(QLabel("Parameter:"))
+        top.addWidget(self.param_combo, 1)
+        top.addSpacing(16)
+        top.addWidget(QLabel("Mode:"))
+        top.addWidget(self.mode_combo, 1)
+        layout.addLayout(top)
 
-        layout.addWidget(self._build_sweep_group())
-        layout.addWidget(self._build_search_group())
-        layout.addWidget(self._build_quality_group())
+        # --- mode-specific inputs (only one visible at a time) ---
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(self._build_sweep_group())
+        mode_row.addWidget(self._build_search_group())
+        mode_row.addWidget(self._build_quality_group())
+        layout.addLayout(mode_row)
 
+        # --- actions ---
         controls = QHBoxLayout()
         self.run_btn = QPushButton("Run")
+        self.run_btn.setDefault(True)
         self.run_btn.clicked.connect(self._start)
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.controller.cancel)
-        self.apply_btn = QPushButton("Apply critical value to model")
+        self.apply_btn = QPushButton("Apply to model")
         self.apply_btn.setEnabled(False)
         self.apply_btn.clicked.connect(self._apply_critical)
         self.export_btn = QPushButton("Export CSV")
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._export_csv)
-        for b in (self.run_btn, self.stop_btn, self.apply_btn, self.export_btn):
-            controls.addWidget(b)
+        controls.addWidget(self.run_btn)
+        controls.addWidget(self.stop_btn)
+        controls.addStretch(1)
+        controls.addWidget(self.apply_btn)
+        controls.addWidget(self.export_btn)
         layout.addLayout(controls)
 
-        self.status = QLabel("Ready")
+        self.status = QLabel("Ready.")
+        self.status.setWordWrap(True)
+        self.status.setStyleSheet("color: #555;")
         layout.addWidget(self.status)
 
+        # --- results plot (light, matches the rest of the app) ---
         self.plot = pg.PlotWidget()
+        self.plot.setBackground("w")
         self.plot.setLabel("left", "k-effective")
-        self.plot.addLegend()
-        self._curve = self.plot.plot([], [], pen=pg.mkPen("#1f77b4", width=2),
-                                     symbol="o", symbolSize=6, name="k-eff")
+        self.plot.showGrid(x=True, y=True, alpha=0.25)
+        for name in ("left", "bottom"):
+            self.plot.getAxis(name).setPen("#666")
+            self.plot.getAxis(name).setTextPen("#333")
+        self._curve = self.plot.plot(
+            [], [], pen=pg.mkPen("#1f77b4", width=2),
+            symbol="o", symbolSize=7, symbolBrush="#1f77b4", symbolPen="#1f77b4",
+        )
         layout.addWidget(self.plot, stretch=1)
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["parameter", "k-effective", "± pcm"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
-        self.table.setMaximumHeight(200)
+        self.table.setMaximumHeight(170)
         layout.addWidget(self.table)
 
     def _build_sweep_group(self) -> QGroupBox:
         self.sweep_group = QGroupBox("Sweep range")
-        form = QFormLayout(self.sweep_group)
+        form = self._compact_form()
+        self.sweep_group.setLayout(form)
         self.lo_spin = QDoubleSpinBox()
         self.hi_spin = QDoubleSpinBox()
         for s in (self.lo_spin, self.hi_spin):
@@ -260,11 +307,12 @@ class SweepDialog(QDialog):
         form.addRow("From:", self.lo_spin)
         form.addRow("To:", self.hi_spin)
         form.addRow("Points:", self.n_spin)
-        return self.sweep_group
+        return self._hug(self.sweep_group)
 
     def _build_search_group(self) -> QGroupBox:
         self.search_group = QGroupBox("Criticality search")
-        form = QFormLayout(self.search_group)
+        form = self._compact_form()
+        self.search_group.setLayout(form)
         self.target_spin = QDoubleSpinBox()
         self.target_spin.setDecimals(4)
         self.target_spin.setRange(0.1, 5.0)
@@ -281,11 +329,13 @@ class SweepDialog(QDialog):
         form.addRow("Bracket from:", self.blo_spin)
         form.addRow("Bracket to:", self.bhi_spin)
         form.addRow("Max evaluations:", self.maxeval_spin)
-        return self.search_group
+        return self._hug(self.search_group)
 
     def _build_quality_group(self) -> QGroupBox:
-        group = QGroupBox("Per-run quality (kept light — each point is a full run)")
-        form = QFormLayout(group)
+        group = QGroupBox("Per-run quality")
+        group.setToolTip("Each point is a full transport run — kept light for speed.")
+        form = self._compact_form()
+        group.setLayout(form)
         self.batches_spin = QSpinBox()
         self.batches_spin.setRange(10, 100_000)
         self.batches_spin.setValue(60)
@@ -295,7 +345,7 @@ class SweepDialog(QDialog):
         self.particles_spin.setValue(1500)
         form.addRow("Batches:", self.batches_spin)
         form.addRow("Particles/batch:", self.particles_spin)
-        return group
+        return self._hug(group)
 
     # ---- reactions --------------------------------------------------------
     def _current_param(self):
@@ -315,7 +365,9 @@ class SweepDialog(QDialog):
         self.hi_spin.setValue(hi)
         self.blo_spin.setValue(p.minimum)
         self.bhi_spin.setValue(p.maximum)
-        self.plot.setLabel("bottom", p.label, units=p.unit or None)
+        # Put the unit in the label text — passing it as a pyqtgraph `units` triggers
+        # SI-prefix rescaling (0.1 wt% -> "100 milli-wt%"), which is nonsense here.
+        self.plot.setLabel("bottom", f"{p.label} ({p.unit})" if p.unit else p.label)
 
     def _on_mode_changed(self) -> None:
         is_search = self.mode_combo.currentIndex() == 1
@@ -424,6 +476,12 @@ class SweepDialog(QDialog):
             n = len(summary.get("points", []))
             self.status.setText(
                 f"Sweep {'stopped' if summary.get('stopped') else 'complete'} — {n} points."
+            )
+        if summary.get("failed"):
+            self.status.setText(
+                self.status.text()
+                + "  (stopped early — a configuration in the bracket couldn't be evaluated; "
+                "narrow the bracket or check the material.)"
             )
 
     def _on_failed(self, message: str) -> None:

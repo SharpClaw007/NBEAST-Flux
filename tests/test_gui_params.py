@@ -79,7 +79,7 @@ def test_godiva_radius_param_changes_geometry(qapp):
 
 
 @requires_data
-def test_enrichment_param_changes_composition(qapp):
+def test_enrichment_param_changes_composition(qapp, tmp_path):
     """Editing enrichment changes the fuel's U-235 atom fraction."""
     from nbeast.gui.main_window import MainWindow
 
@@ -87,7 +87,10 @@ def test_enrichment_param_changes_composition(qapp):
         fuel = next(m for m in model.materials if "UO2" in m.name)
         return {name: pct for (name, pct, _kind) in fuel.nuclides}["U235"]
 
-    win = MainWindow()
+    # Isolated project so the default (UO2) materials are deterministic — a bare
+    # MainWindow() would restore the user's real home project (which may hold a
+    # different fuel selection).
+    win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "proj")
     win.set_template("Pin cell")
 
     win.set_param("enrichment", 3.2)
