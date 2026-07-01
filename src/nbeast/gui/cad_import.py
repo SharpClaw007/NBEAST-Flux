@@ -49,28 +49,26 @@ class _Worker(QObject):
 
 class CadImportDialog(QDialog):
     completed = Signal(dict)              # {keff, keff_std, h5m}
-    preview = Signal(list, list, list)    # (stl_paths, colors, labels) -> 3D viewport
 
     def __init__(self, cross_sections: str | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Import CAD geometry (DAGMC)")
-        self.resize(560, 460)
+        self.resize(980, 640)
         self._cross_sections = cross_sections
         self._thread = None
         self._worker = None
         self._on_done_cb = None
-        self._preview_stls = None
-        self._preview_colors = None
-        self._preview_labels = None
+        self._stls = None            # per-solid tessellated STLs, for the live preview
+        self._inspected_path = None
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
-            "Import a STEP file, assign a material to each solid, then mesh and run it "
-            "as DAGMC geometry — natively on Apple Silicon."
+            "Import a STEP file and assign a material to each solid. The 3-D preview "
+            "colours each solid by its material, so you can see exactly what you're "
+            "assigning to which part."
         ))
 
-        # STEP file picker — inspection is automatic once a file is chosen.
-        self._inspected_path = None
+        # STEP file picker — inspection + preview are automatic once a file is chosen.
         picker = QHBoxLayout()
         self.step_edit = QLineEdit()
         self.step_edit.setPlaceholderText("path to a .step / .stp file")
@@ -85,13 +83,14 @@ class CadImportDialog(QDialog):
         picker.addWidget(self.inspect_btn)
         layout.addLayout(picker)
 
-        # per-solid material assignment
+        # Split: material assignments (left) | live colour-coded 3-D preview (right).
+        split = QHBoxLayout()
+        left = QVBoxLayout()
         self.table = QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(["Solid", "Material"])
         self.table.horizontalHeader().setStretchLastSection(True)
-        layout.addWidget(self.table, 1)
+        left.addWidget(self.table, 1)
 
-        # mesh + run settings
         form = QFormLayout()
         self.max_mesh = QDoubleSpinBox(); self.max_mesh.setRange(0.1, 1000); self.max_mesh.setValue(10.0)
         self.min_mesh = QDoubleSpinBox(); self.min_mesh.setRange(0.01, 1000); self.min_mesh.setValue(1.0)
@@ -101,19 +100,23 @@ class CadImportDialog(QDialog):
         form.addRow("Min mesh size:", self.min_mesh)
         form.addRow("Batches:", self.batches)
         form.addRow("Particles/batch:", self.particles)
-        layout.addLayout(form)
+        left.addLayout(form)
 
-        self.status = QLabel("Pick a STEP file and click Inspect.")
+        self.status = QLabel("Pick a STEP file to preview it.")
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color: #555;")
-        layout.addWidget(self.status)
+        left.addWidget(self.status)
+
+        split.addLayout(left, 2)
+
+        from .viewport3d import FluxViewport
+        self.preview3d = FluxViewport()
+        self.preview3d.setMinimumWidth(430)
+        split.addWidget(self.preview3d, 3)
+        layout.addLayout(split, 1)
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
-        self.preview_btn = QPushButton("Preview 3D")
-        self.preview_btn.setEnabled(False)
-        self.preview_btn.clicked.connect(self._preview)
-        buttons.addWidget(self.preview_btn)
         self.run_btn = QPushButton("Generate && run")
         self.run_btn.setEnabled(False)
         self.run_btn.clicked.connect(self._run)
@@ -139,7 +142,6 @@ class CadImportDialog(QDialog):
     def _set_busy(self, busy: bool, message: str) -> None:
         has_solids = self.table.rowCount() > 0
         self.inspect_btn.setEnabled(not busy)
-        self.preview_btn.setEnabled(not busy and has_solids)
         self.run_btn.setEnabled(not busy and has_solids)
         self.status.setText(message)
 
@@ -190,13 +192,19 @@ class CadImportDialog(QDialog):
     def _on_inspected(self, info) -> None:
         self._teardown()
         self._inspected_path = self.step_edit.text().strip()
+        self._stls = None
         # inspect_step returns a dict; the UI unit test passes a bare count.
         n_solids = info["n_solids"] if isinstance(info, dict) else int(info)
         extent = info.get("extent") if isinstance(info, dict) else None
+        presets = list(cad.MATERIAL_PRESETS.keys())
         self.table.setRowCount(n_solids)
         for i in range(n_solids):
             self.table.setItem(i, 0, QTableWidgetItem(f"Solid {i}"))
-            self.table.setCellWidget(i, 1, self._material_combo())
+            combo = self._material_combo()
+            combo.setCurrentIndex(i % len(presets))   # distinct default colours per solid
+            combo.currentIndexChanged.connect(lambda _idx, r=i: self._on_material_changed(r))
+            self.table.setCellWidget(i, 1, combo)
+            self._recolor_row(i)
 
         note = f"{n_solids} solid(s) found — assign materials, then Generate & run."
         if extent:
@@ -206,28 +214,58 @@ class CadImportDialog(QDialog):
             mn = min(max(extent / 40.0, self.min_mesh.minimum()), self.min_mesh.maximum())
             self.max_mesh.setValue(mx)
             self.min_mesh.setValue(mn)
-            note = (f"{n_solids} solid(s), size ≈ {extent:g} — mesh sized to fit. "
-                    "Assign materials, then Generate & run.")
-        self._set_busy(False, note)
+            note = f"{n_solids} solid(s), size ≈ {extent:g} — mesh sized to fit."
+        self._set_busy(False, note)   # solids present → enable Generate & run
+        self._start_tessellate()      # then auto-build the colour-coded 3-D preview
 
-    # ---- 3D preview ------------------------------------------------------
-    def _preview(self) -> None:
+    # ---- live colour-coded 3D preview ------------------------------------
+    def _start_tessellate(self) -> None:
+        if self._thread is not None:
+            return
         path = self.step_edit.text().strip()
-        tags = [self.table.cellWidget(i, 1).currentData() for i in range(self.table.rowCount())]
+        if not path or not os.path.exists(path):
+            return
         out_dir = tempfile.mkdtemp(prefix="nbeast_cad_prev_")
-        self._set_busy(True, "Tessellating geometry for the 3D preview…")
-        self._start(lambda: cad.tessellate(path, out_dir), lambda stls: self._on_preview(stls, tags))
+        self._set_busy(True, "Building the 3-D preview…")
+        self._start(lambda: cad.tessellate(path, out_dir), self._on_tessellated)
 
     @Slot(object)
-    def _on_preview(self, stls, tags) -> None:
+    def _on_tessellated(self, stls) -> None:
         self._teardown()
+        self._stls = list(stls)
+        self._render_preview()
+        self._set_busy(
+            False,
+            f"{len(stls)} solid(s), colour-coded by material — assign, then Generate & run."
+        )
+
+    def _colors_labels(self) -> tuple[list, list]:
+        tags = [self.table.cellWidget(i, 1).currentData() for i in range(self.table.rowCount())]
         colors = [cad.MATERIAL_PRESETS[t]["color"] for t in tags]
         labels = [cad.MATERIAL_PRESETS[t]["label"] for t in tags]
-        self._preview_stls = list(stls)          # reused for the volume-render overlay
-        self._preview_colors = colors
-        self._preview_labels = labels
-        self._set_busy(False, f"Previewing {len(stls)} solid(s) — coloured by material.")
-        self.preview.emit(list(stls), colors, labels)
+        return colors, labels
+
+    def _render_preview(self) -> None:
+        if not self._stls:
+            return
+        colors, labels = self._colors_labels()
+        self.preview3d.show_cad(self._stls, colors, title="CAD geometry", labels=labels)
+
+    def _recolor_row(self, row: int) -> None:
+        """Tint the Solid cell with its material colour so the table maps to the 3-D view."""
+        from PySide6.QtGui import QColor
+
+        combo = self.table.cellWidget(row, 1)
+        item = self.table.item(row, 0)
+        if combo is None or item is None:
+            return
+        color = cad.MATERIAL_PRESETS.get(combo.currentData(), {}).get("color")
+        if color:
+            item.setBackground(QColor(color))
+
+    def _on_material_changed(self, row: int) -> None:
+        self._recolor_row(row)
+        self._render_preview()
 
     # ---- generate + run --------------------------------------------------
     def _run(self) -> None:
@@ -250,10 +288,9 @@ class CadImportDialog(QDialog):
     @Slot(object)
     def _on_done(self, res: dict) -> None:
         self._teardown()
-        if self._preview_stls:  # overlay the geometry in the volume render
-            res["stls"] = self._preview_stls
-            res["colors"] = self._preview_colors
-            res["labels"] = getattr(self, "_preview_labels", None)
+        if self._stls:  # overlay the coloured geometry in the result volume render
+            colors, labels = self._colors_labels()
+            res["stls"], res["colors"], res["labels"] = self._stls, colors, labels
         self._set_busy(False, f"Done.  k-eff = {res['keff']:.4f} ± {res['keff_std']:.4f}")
         self.completed.emit(res)
 

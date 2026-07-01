@@ -1255,7 +1255,6 @@ class MainWindow(QMainWindow):
         dialog.batches.setValue(self.batches_spin.value())
         dialog.particles.setValue(self.particles_spin.value())
         dialog.completed.connect(self._on_cad_completed)
-        dialog.preview.connect(self._show_cad_preview)
         dialog.finished.connect(lambda _=0: setattr(self, "_cad_dialog", None))
         self._cad_dialog = dialog
         # Non-modal: the main window's 3D viewport must stay live so previews and
@@ -1302,13 +1301,6 @@ class MainWindow(QMainWindow):
             self.flux_view.show_field_array(
                 res["flux_map"], (b[0], b[1]), (b[2], b[3]), title="CAD flux map"
             )
-
-    def _show_cad_preview(self, stls, colors, labels=None) -> None:
-        """Render imported CAD solids (coloured by material) in the 3D viewport."""
-        # Make the viewport the visible tab BEFORE rendering, so its GL widget is
-        # mapped when the VTK interactor is (lazily) created — else it can segfault.
-        self.tabs.setCurrentWidget(self.flux_view)
-        self.flux_view.show_cad(stls, colors, title="CAD geometry", labels=labels)
 
     def _open_cad_setup(self) -> None:
         from .cad_setup import CadSetupDialog

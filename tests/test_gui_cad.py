@@ -28,11 +28,36 @@ def test_dialog_constructs_and_populates(qapp):
     dialog._on_inspected(2)
     assert dialog.table.rowCount() == 2
     assert dialog.run_btn.isEnabled()
-    assert dialog.preview_btn.isEnabled()
 
     combo = dialog.table.cellWidget(0, 1)
     assert combo.count() == len(cad.MATERIAL_PRESETS)
     assert combo.currentData() in cad.MATERIAL_PRESETS
+    # each solid gets a distinct default material + its cell is tinted that colour
+    assert dialog.table.cellWidget(0, 1).currentData() != dialog.table.cellWidget(1, 1).currentData()
+    assert dialog.table.item(0, 0).background().color().isValid()
+    dialog.close()
+
+
+def test_dialog_embeds_live_colour_coded_preview(qapp):
+    """The importer shows its own 3-D preview and recolors a solid when its material
+    changes — so it's clear what material maps to which part."""
+    from nbeast.gui.cad_import import CadImportDialog
+    from nbeast.gui.viewport3d import FluxViewport
+
+    dialog = CadImportDialog(cross_sections=None)
+    assert isinstance(dialog.preview3d, FluxViewport)   # preview lives in the dialog
+    dialog._on_inspected(3)
+    # distinct default materials so the parts read apart at a glance
+    tags = [dialog.table.cellWidget(i, 1).currentData() for i in range(3)]
+    assert len(set(tags)) == 3
+    before = dialog.table.item(0, 0).background().color().name()
+    # with tessellated solids present, rendering must not raise (correct show_cad args)
+    dialog._stls = ["a.stl", "b.stl", "c.stl"]
+    dialog._render_preview()
+    # changing a material recolors that solid's cell and re-renders (no crash)
+    combo = dialog.table.cellWidget(0, 1)
+    combo.setCurrentIndex((combo.currentIndex() + 1) % combo.count())
+    assert dialog.table.item(0, 0).background().color().name() != before
     dialog.close()
 
 
