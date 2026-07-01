@@ -48,18 +48,26 @@ def test_mainwindow_constructs(qapp):
     win.close()
 
 
-def test_simple_advanced_toggle(qapp):
-    """Simple mode uses a quality preset; Advanced exposes raw settings."""
+def test_settings_editable_in_model_tree(qapp, tmp_path):
+    """Run settings moved off the toolbar into an editable Settings group."""
     from nbeast.gui.main_window import MainWindow
 
-    win = MainWindow()
-    assert win._advanced is False
+    win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "p")
+    # quality preset still drives batches/particles
     win.quality_combo.setCurrentText("High")
     assert win.batches_spin.value() == 200
     assert win.particles_spin.value() == 5000
 
-    win.advanced_check.setChecked(True)
-    assert win._advanced is True
+    # clicking Settings renders editable editors; edits write to the canonical spins
+    settings = next(
+        win.model_tree.topLevelItem(i)
+        for i in range(win.model_tree.topLevelItemCount())
+        if win.model_tree.topLevelItem(i).text(0) == "Settings"
+    )
+    win._on_tree_click(settings, 0)
+    assert win.properties.rowCount() == 4  # quality, batches, particles, seed
+    win._batches_editor.setValue(321)
+    assert win.batches_spin.value() == 321
     win.close()
 
 

@@ -49,6 +49,7 @@ from .spectrum import SpectrumView
 from .viewport3d import FluxViewport
 
 _GROUPS = ("Materials", "Geometry")
+CAD_TEMPLATE = "Custom CAD (DAGMC)"   # a template entry that drives the CAD import flow
 FIELD_TITLES = {
     "flux": "Scalar flux",
     "fission": "Fission rate",
@@ -85,6 +86,8 @@ class MainWindow(QMainWindow):
         self._material_values = {
             label: spec.material_defaults() for label, spec in specs.SPECS.items()
         }
+        # Custom-CAD template state (populated by the CAD import dialog).
+        self._cad = {"step": None, "materials": []}
         self._total_batches = 0
         self._statepoint: str | None = None
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
@@ -134,12 +137,9 @@ class MainWindow(QMainWindow):
         data_action.triggered.connect(lambda: self._open_data_manager())
         file_menu.addAction(data_action)
 
-        # CAD geometry (DAGMC): import when the native arm64 envs exist, else offer setup.
-        if cad.is_available():
-            cad_action = QAction("Import CAD geometry…", self)
-            cad_action.triggered.connect(self._open_cad_import)
-            file_menu.addAction(cad_action)
-        else:
+        # CAD geometry (DAGMC) is picked from the Template dropdown ("Custom CAD");
+        # when the native envs aren't present, offer setup here.
+        if not cad.is_available():
             setup_action = QAction("Set up CAD geometry support…", self)
             setup_action.triggered.connect(self._open_cad_setup)
             file_menu.addAction(setup_action)
@@ -210,62 +210,14 @@ class MainWindow(QMainWindow):
 
         tb.addWidget(QLabel(" Template: "))
         self.template_combo = QComboBox()
-        self.template_combo.addItems(specs.SPECS.keys())
-        self.template_combo.setToolTip("Choose the reactor model to simulate.")
+        self.template_combo.addItems([*specs.SPECS.keys(), CAD_TEMPLATE])
+        self.template_combo.setToolTip("Choose the model to simulate (or import custom CAD).")
         self.template_combo.currentTextChanged.connect(self.set_template)
         tb.addWidget(self.template_combo)
 
         tb.addSeparator()
-
-        # Simple mode: one quality preset (sets batches + particles).
-        self._quality_label_act = tb.addWidget(QLabel(" Quality: "))
-        self.quality_combo = QComboBox()
-        self.quality_combo.addItems(["Quick", "Standard", "High"])
-        self.quality_combo.setCurrentText("Standard")
-        self.quality_combo.setToolTip(
-            "Run-quality preset (sets batches & particles). Switch on Advanced for full control."
-        )
-        self.quality_combo.currentTextChanged.connect(self._apply_quality)
-        self._quality_combo_act = tb.addWidget(self.quality_combo)
-
-        # Advanced mode: raw run settings.
-        self._batches_label_act = tb.addWidget(QLabel(" Batches: "))
-        self.batches_spin = QSpinBox()
-        self.batches_spin.setRange(10, 100_000)
-        self.batches_spin.setValue(100)
-        self.batches_spin.setToolTip(
-            "Monte Carlo batches (statistical samples). More batches → lower "
-            "uncertainty but longer runtime. Early 'inactive' batches are discarded."
-        )
-        self.batches_spin.valueChanged.connect(lambda _: self._refresh_tree())
-        self._batches_act = tb.addWidget(self.batches_spin)
-
-        self._particles_label_act = tb.addWidget(QLabel(" Particles/batch: "))
-        self.particles_spin = QSpinBox()
-        self.particles_spin.setRange(100, 10_000_000)
-        self.particles_spin.setSingleStep(1000)
-        self.particles_spin.setValue(2000)
-        self.particles_spin.setToolTip(
-            "Neutrons simulated per batch. More → smoother flux/spectrum maps, "
-            "longer runtime."
-        )
-        self.particles_spin.valueChanged.connect(lambda _: self._refresh_tree())
-        self._particles_act = tb.addWidget(self.particles_spin)
-
-        self._seed_label_act = tb.addWidget(QLabel(" Seed: "))
-        self.seed_spin = QSpinBox()
-        self.seed_spin.setRange(1, 2_147_483_647)
-        self.seed_spin.setValue(1)
-        self.seed_spin.setToolTip(
-            "Random-number seed. Fixed by default so runs are exactly reproducible; "
-            "change it to draw an independent statistical realization."
-        )
-        self.seed_spin.valueChanged.connect(lambda _: self._refresh_tree())
-        self._seed_act = tb.addWidget(self.seed_spin)
-
-        tb.addSeparator()
         self.run_action = QAction("Run", self)
-        self.run_action.setToolTip("Run the k-effective (criticality) simulation.")
+        self.run_action.setToolTip("Run the simulation.")
         self.run_action.triggered.connect(self.start_run)
         tb.addAction(self.run_action)
         self.stop_action = QAction("Stop", self)
@@ -274,29 +226,38 @@ class MainWindow(QMainWindow):
         self.stop_action.triggered.connect(self.stop_run)
         tb.addAction(self.stop_action)
 
-        tb.addSeparator()
-        self.advanced_check = QCheckBox("Advanced")
-        self.advanced_check.setToolTip("Show expert run settings (batches, particles per batch).")
-        self.advanced_check.toggled.connect(self._set_advanced)
-        tb.addWidget(self.advanced_check)
-
+        # Run-settings widgets are the canonical state but live in the Model tree's
+        # Settings group (edited in Properties), not on the toolbar. Parented to the
+        # window, never shown directly.
+        self.quality_combo = QComboBox(self)
+        self.quality_combo.addItems(["Quick", "Standard", "High"])
+        self.quality_combo.setCurrentText("Standard")
+        self.quality_combo.currentTextChanged.connect(self._apply_quality)
+        self.batches_spin = QSpinBox(self)
+        self.batches_spin.setRange(10, 100_000)
+        self.batches_spin.setValue(100)
+        self.batches_spin.valueChanged.connect(lambda _: self._refresh_tree())
+        self.particles_spin = QSpinBox(self)
+        self.particles_spin.setRange(100, 10_000_000)
+        self.particles_spin.setSingleStep(1000)
+        self.particles_spin.setValue(2000)
+        self.particles_spin.valueChanged.connect(lambda _: self._refresh_tree())
+        self.seed_spin = QSpinBox(self)
+        self.seed_spin.setRange(1, 2_147_483_647)
+        self.seed_spin.setValue(1)
+        self.seed_spin.valueChanged.connect(lambda _: self._refresh_tree())
+        # These are state only (edited via the Settings group), never shown directly —
+        # hide them so they don't render at the window origin.
+        for w in (self.quality_combo, self.batches_spin, self.particles_spin, self.seed_spin):
+            w.hide()
+        self._advanced = True  # everything editable now; kept for compatibility
         self._apply_quality("Standard")
-        self._set_advanced(False)
 
     def _apply_quality(self, name: str) -> None:
         presets = {"Quick": (50, 1000), "Standard": (100, 2000), "High": (200, 5000)}
         batches, particles = presets.get(name, (100, 2000))
         self.batches_spin.setValue(batches)
         self.particles_spin.setValue(particles)
-
-    def _set_advanced(self, advanced: bool) -> None:
-        self._advanced = advanced
-        for act in (self._batches_label_act, self._batches_act,
-                    self._particles_label_act, self._particles_act,
-                    self._seed_label_act, self._seed_act):
-            act.setVisible(advanced)
-        for act in (self._quality_label_act, self._quality_combo_act):
-            act.setVisible(not advanced)
 
     def _build_docks(self) -> None:
         self.model_tree = QTreeWidget()
@@ -367,10 +328,17 @@ class MainWindow(QMainWindow):
 
     # ---- model tree -------------------------------------------------------
     @property
-    def spec(self) -> specs.TemplateSpec:
-        return specs.SPECS[self._template]
+    def spec(self):
+        return specs.SPECS.get(self._template)
+
+    @property
+    def _is_cad(self) -> bool:
+        return self._template == CAD_TEMPLATE
 
     def set_template(self, name: str) -> None:
+        if name == CAD_TEMPLATE:
+            self._select_cad_template()
+            return
         if name not in specs.SPECS:
             return
         self._template = name
@@ -378,6 +346,23 @@ class MainWindow(QMainWindow):
             self.template_combo.setCurrentText(name)
         self.properties.setRowCount(0)
         self._refresh_tree()
+
+    def _select_cad_template(self) -> None:
+        from nbeast.core import cad
+
+        if not cad.is_available():
+            self.statusBar().showMessage("CAD support isn't installed — opening setup.")
+            self.template_combo.setCurrentText(self._template)  # revert
+            self._open_cad_setup()
+            return
+        self._template = CAD_TEMPLATE
+        if self.template_combo.currentText() != CAD_TEMPLATE:
+            self.template_combo.setCurrentText(CAD_TEMPLATE)
+        self.properties.setRowCount(0)
+        self._refresh_tree()
+        self.statusBar().showMessage(
+            "Custom CAD — click Geometry (or Run) to import a STEP file and assign materials."
+        )
 
     def set_param(self, key: str, value: float) -> None:
         """Programmatic + UI entry point for editing a parameter."""
@@ -391,8 +376,20 @@ class MainWindow(QMainWindow):
             return f"{param.label} = {int(value)}{unit}"
         return f"{param.label} = {value:.{param.decimals}f}{unit}"
 
+    def _settings_tree_item(self) -> QTreeWidgetItem:
+        settings = QTreeWidgetItem(["Settings"])
+        settings.addChild(QTreeWidgetItem([f"quality = {self.quality_combo.currentText()}"]))
+        settings.addChild(QTreeWidgetItem([f"batches = {self.batches_spin.value()}"]))
+        settings.addChild(QTreeWidgetItem([f"particles/batch = {self.particles_spin.value()}"]))
+        settings.addChild(QTreeWidgetItem([f"inactive = {_inactive_for(self.batches_spin.value())}"]))
+        settings.addChild(QTreeWidgetItem([f"seed = {self.seed_spin.value()}"]))
+        return settings
+
     def _refresh_tree(self) -> None:
         self.model_tree.clear()
+        if self._is_cad:
+            self._refresh_cad_tree()
+            return
         spec = self.spec
 
         materials_item = QTreeWidgetItem(["Materials"])
@@ -408,13 +405,28 @@ class MainWindow(QMainWindow):
         for p in spec.params_in("Geometry"):
             geometry.addChild(QTreeWidgetItem([self._value_text(p)]))
 
-        settings = QTreeWidgetItem(["Settings"])
-        settings.addChild(QTreeWidgetItem([f"batches = {self.batches_spin.value()}"]))
-        settings.addChild(QTreeWidgetItem([f"particles/batch = {self.particles_spin.value()}"]))
-        settings.addChild(QTreeWidgetItem([f"inactive = {_inactive_for(self.batches_spin.value())}"]))
-        settings.addChild(QTreeWidgetItem([f"seed = {self.seed_spin.value()}"]))
+        for item in (materials_item, geometry, self._settings_tree_item()):
+            self.model_tree.addTopLevelItem(item)
+            item.setExpanded(True)
 
-        for item in (materials_item, geometry, settings):
+    def _refresh_cad_tree(self) -> None:
+        from nbeast.core import cad
+
+        step = self._cad.get("step")
+        geometry = QTreeWidgetItem(["Geometry"])
+        geometry.addChild(QTreeWidgetItem(
+            [f"CAD file: {os.path.basename(step)}" if step else "CAD file: (click to import…)"]))
+
+        materials_item = QTreeWidgetItem(["Materials"])
+        mats = self._cad.get("materials") or []
+        if mats:
+            for i, tag in enumerate(mats):
+                label = cad.MATERIAL_PRESETS.get(tag, {}).get("label", tag)
+                materials_item.addChild(QTreeWidgetItem([f"Solid {i}: {label}"]))
+        else:
+            materials_item.addChild(QTreeWidgetItem(["(import a CAD file to assign materials)"]))
+
+        for item in (materials_item, geometry, self._settings_tree_item()):
             self.model_tree.addTopLevelItem(item)
             item.setExpanded(True)
 
@@ -424,6 +436,15 @@ class MainWindow(QMainWindow):
 
     def _on_tree_click(self, item: QTreeWidgetItem, _column: int) -> None:
         group = self._group_of(item)
+        if group == "Settings":
+            self._render_settings_editors()
+            return
+        if self._is_cad:
+            if group in ("Geometry", "Materials"):
+                self._open_cad_import()   # configure the CAD file + materials in the dialog
+            else:
+                self._render_readonly(group)
+            return
         if group == "Materials":
             self._render_materials_editors()
         elif group == "Geometry":
@@ -432,6 +453,38 @@ class MainWindow(QMainWindow):
                 else self._render_readonly("Geometry")
         else:
             self._render_readonly(group)
+
+    def _render_settings_editors(self) -> None:
+        """Run settings (quality preset, batches, particles, seed) — editable here now
+        that they've moved off the toolbar. Editors write to the canonical spin boxes."""
+        self.properties.setRowCount(4)
+        self.properties.setItem(0, 0, QTableWidgetItem("Quality preset"))
+        qcombo = QComboBox()
+        qcombo.addItems(["Quick", "Standard", "High"])
+        qcombo.setCurrentText(self.quality_combo.currentText())
+        qcombo.currentTextChanged.connect(self._on_quality_selected)
+        self.properties.setCellWidget(0, 1, qcombo)
+
+        def spin(row, label, canonical, minimum, maximum, step=1):
+            self.properties.setItem(row, 0, QTableWidgetItem(label))
+            editor = QSpinBox()
+            editor.setRange(minimum, maximum)
+            editor.setSingleStep(step)
+            editor.setValue(canonical.value())
+            editor.valueChanged.connect(canonical.setValue)
+            self.properties.setCellWidget(row, 1, editor)
+            return editor
+
+        self._batches_editor = spin(1, "Batches", self.batches_spin, 10, 100_000)
+        self._particles_editor = spin(2, "Particles/batch", self.particles_spin,
+                                      100, 10_000_000, step=1000)
+        spin(3, "Seed", self.seed_spin, 1, 2_147_483_647)
+
+    def _on_quality_selected(self, name: str) -> None:
+        self.quality_combo.setCurrentText(name)   # _apply_quality updates batches/particles
+        if hasattr(self, "_batches_editor"):
+            self._batches_editor.setValue(self.batches_spin.value())
+            self._particles_editor.setValue(self.particles_spin.value())
 
     def _make_param_editor(self, p: specs.Parameter):
         value = self._param_values[self._template][p.key]
@@ -554,7 +607,7 @@ class MainWindow(QMainWindow):
 
     @property
     def _is_fixed_source(self) -> bool:
-        return self.spec.run_mode == "fixed source"
+        return self.spec is not None and self.spec.run_mode == "fixed source"
 
     def _build_model(self):
         batches = self.batches_spin.value()
@@ -573,6 +626,8 @@ class MainWindow(QMainWindow):
 
     def _unavailable_materials(self) -> list:
         """Selected materials whose data isn't in the active library (role, spec)."""
+        if self.spec is None:
+            return []
         avail = materials.available_names(self._cross_sections)
         out = []
         for role in self.spec.material_roles:
@@ -583,6 +638,9 @@ class MainWindow(QMainWindow):
 
     def start_run(self) -> None:
         if self.controller.running:
+            return
+        if self._is_cad:
+            self._open_cad_import()   # CAD configures + runs inside its own dialog
             return
         missing = self._unavailable_materials()
         if missing:
@@ -736,6 +794,9 @@ class MainWindow(QMainWindow):
 
     def show_tracks(self) -> None:
         """Generate a few neutron tracks and render them in the Flux-map tab."""
+        if self.spec is None:
+            self.statusBar().showMessage("Neutron tracks aren't available for the CAD template.")
+            return
         from nbeast.core import tracks
 
         self.statusBar().showMessage("Generating neutron tracks…")
@@ -937,18 +998,33 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"Raw export failed: {exc}")
 
+    def _analysis_needs_template(self) -> bool:
+        """Analysis tools operate on a parametric template — not the CAD import."""
+        if self.spec is None:
+            self.statusBar().showMessage(
+                "This analysis works on a parametric template — pick one (not Custom CAD)."
+            )
+            return False
+        return True
+
     def _open_sweep(self) -> None:
+        if not self._analysis_needs_template():
+            return
         from .sweep_dialog import SweepDialog
 
         dialog = SweepDialog(self, parent=self)
         dialog.exec()
 
     def _open_mgxs(self) -> None:
+        if not self._analysis_needs_template():
+            return
         from .mgxs_dialog import MgxsDialog
 
         MgxsDialog(self, parent=self).exec()
 
     def _open_depletion(self) -> None:
+        if not self._analysis_needs_template():
+            return
         from nbeast.core import depletion
 
         if depletion.is_available():
@@ -981,11 +1057,28 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _on_cad_completed(self, res: dict) -> None:
+        from nbeast.core.runner import RunResult
+
+        # Remember the config so the CAD template's tree shows it.
+        self._cad["step"] = res.get("step")
+        self._cad["materials"] = list(res.get("material_tags", []))
+        if self._is_cad:
+            self._refresh_tree()
+
         self.statusBar().showMessage(
             f"CAD run: k-eff = {res['keff']:.4f} ± {res['keff_std']:.4f}"
         )
-        if res.get("energy_edges") and res.get("flux"):
+        sp = res.get("statepoint")
+        if sp and Path(sp).exists():
+            # Load through the normal results path so Convergence + the Results panel
+            # (spectrum, flux/dose/reaction maps, diagnostics) populate like any run.
+            self.last_result = RunResult(keff=res["keff"], keff_std=res["keff_std"], statepoint=sp)
+            self._load_results(sp)
+            self._replay_convergence(sp, 0)
+        elif res.get("energy_edges") and res.get("flux"):
             self.spectrum_view.set_spectrum(res["energy_edges"], res["flux"])
+
+        # Publication 3D volume render with the geometry overlay (the CAD headline).
         if res.get("flux_volume") and res.get("vol_bounds"):
             b = res["vol_bounds"]
             self.flux_view.show_field_volume(
@@ -993,7 +1086,7 @@ class MainWindow(QMainWindow):
                 stls=res.get("stls"), colors=res.get("colors"), title="CAD scalar flux",
             )
             self.tabs.setCurrentWidget(self.flux_view)
-        elif res.get("flux_map") and res.get("map_bounds"):
+        elif not sp and res.get("flux_map") and res.get("map_bounds"):
             b = res["map_bounds"]
             self.flux_view.show_field_array(
                 res["flux_map"], (b[0], b[1]), (b[2], b[3]), title="CAD flux map"
@@ -1032,6 +1125,11 @@ class MainWindow(QMainWindow):
         out_dir = Path(out_dir)
         if not (self.last_result and self._statepoint):
             self.statusBar().showMessage("Run a simulation before exporting a report.")
+            return None
+        if self.spec is None:
+            self.statusBar().showMessage(
+                "Report export isn't available for the CAD template yet — use Export raw data."
+            )
             return None
 
         values = self._param_values[self._template]

@@ -45,7 +45,9 @@ def main() -> None:
     spectrum.filters = [openmc.EnergyFilter(energies)]
     spectrum.scores = ["flux"]
 
-    # z-integrated flux map over the geometry bounding box.
+    # z-integrated flux map over the geometry bounding box. Same tally names + scores
+    # as the templated runs, so the main window loads CAD results through the normal
+    # path (flux/fission/absorption/heating maps, dose, convergence, diagnostics).
     n = 50
     ll = [float(v) for v in bbox.lower_left]
     ur = [float(v) for v in bbox.upper_right]
@@ -55,19 +57,25 @@ def main() -> None:
     mesh.upper_right = ur
     flux_mesh = openmc.Tally(name="flux_mesh")
     flux_mesh.filters = [openmc.MeshFilter(mesh)]
-    flux_mesh.scores = ["flux"]
+    flux_mesh.scores = ["flux", "fission", "absorption", "nu-fission", "heating"]
+
+    # flux-to-dose-rate map (ICRP coefficients).
+    dose_mesh = openmc.Tally(name="dose_mesh")
+    energies_dose, coeffs_dose = openmc.data.dose_coefficients("neutron", "AP")
+    dose_mesh.filters = [openmc.MeshFilter(mesh), openmc.EnergyFunctionFilter(energies_dose, coeffs_dose)]
+    dose_mesh.scores = ["flux"]
 
     # Full 3D flux field for the publication volume render.
-    m = 36
+    mm = 36
     vmesh = openmc.RegularMesh()
-    vmesh.dimension = (m, m, m)
+    vmesh.dimension = (mm, mm, mm)
     vmesh.lower_left = ll
     vmesh.upper_right = ur
     flux_volume = openmc.Tally(name="flux_volume")
     flux_volume.filters = [openmc.MeshFilter(vmesh)]
     flux_volume.scores = ["flux"]
 
-    tallies = openmc.Tallies([spectrum, flux_mesh, flux_volume])
+    tallies = openmc.Tallies([spectrum, flux_mesh, dose_mesh, flux_volume])
 
     rundir = os.path.join(os.path.expanduser("~"), ".nbeast", "cad_run")
     os.makedirs(rundir, exist_ok=True)
@@ -84,12 +92,13 @@ def main() -> None:
         vflux = sp.get_tally(name="flux_volume").get_values(scores=["flux"]).ravel()
         print("RESULT:" + json.dumps({
             "keff": float(k.n), "keff_std": float(k.s),
+            "statepoint": os.path.abspath(sp_path),
             "energy_edges": [float(x) for x in edges],
             "flux": [float(x) for x in flux],
             "flux_map": [[float(v) for v in row] for row in fmap],
             "map_bounds": [ll[0], ll[1], ur[0], ur[1]],
             "flux_volume": [float(v) for v in vflux],
-            "vol_dims": [m, m, m],
+            "vol_dims": [mm, mm, mm],
             "vol_bounds": [ll[0], ll[1], ll[2], ur[0], ur[1], ur[2]],
         }))
 

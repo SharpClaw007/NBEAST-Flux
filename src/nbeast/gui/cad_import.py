@@ -214,7 +214,7 @@ class CadImportDialog(QDialog):
             h5m = cad.generate_h5m(path, tags, out, max_mesh_size=max_m, min_mesh_size=min_m)
             res = cad.run_model(h5m, cad.material_specs(tags), batches=batches,
                                 particles=particles, cross_sections=xs)
-            return {**res, "h5m": h5m}
+            return {**res, "h5m": h5m, "step": path, "material_tags": tags}
 
         self._set_busy(True, "Meshing geometry and running… (this can take a while)")
         self._start(job, self._on_done)
