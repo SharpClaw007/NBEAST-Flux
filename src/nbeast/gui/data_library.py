@@ -1,28 +1,37 @@
 """Data Library — one window for all nuclear data.
 
-Consolidates what used to be scattered across the app (the cross-section downloader,
-the per-material 'needs data' offers, the Xe/Sm poison download, and depletion setup)
-into a single browser: categories of materials + special data, what's installed vs.
-available, per-item / per-category / everything downloads with size estimates, and
-import-from-disk. Downloads accumulate in one library (a superset of the bundle) and
-become active. Runs off the UI thread.
+Two tabs:
+  • Materials — categories (fuels/moderators/…) + Poisons + Depletion, collapsed on open,
+    each material showing installed vs. needs-data with sizes and downloads.
+  • Elements — a classic periodic table of the full ENDF/B-VIII.0 library (green = all
+    isotopes installed, amber = some, grey = available). Clicking an element opens a
+    grouped list of its individual isotopes + the materials that use it, with a Back button.
+
+Downloads accumulate into one library (a superset of the bundled starter) and become
+active. All network work runs off the UI thread.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
-    QDialogButtonBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QStackedWidget,
+    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from nbeast.core import data, materials
@@ -36,6 +45,84 @@ _MATERIAL_CATEGORIES = (
     ("Cladding & structural", ("cladding", "structural")),
     ("Absorbers", ("absorber",)),
 )
+
+
+def _pt_position(z: int):
+    """(grid row, group column 1-18) for atomic number z in a classic periodic table;
+    lanthanides land on grid row 8 and actinides on row 9 (row 7 is a spacer)."""
+    if z == 1:
+        return (0, 1)
+    if z == 2:
+        return (0, 18)
+    if z == 3:
+        return (1, 1)
+    if z == 4:
+        return (1, 2)
+    if 5 <= z <= 10:
+        return (1, z + 8)
+    if z == 11:
+        return (2, 1)
+    if z == 12:
+        return (2, 2)
+    if 13 <= z <= 18:
+        return (2, z)
+    if 19 <= z <= 36:
+        return (3, z - 18)
+    if 37 <= z <= 54:
+        return (4, z - 36)
+    if z in (55, 56):
+        return (5, z - 54)
+    if 57 <= z <= 71:
+        return (8, z - 54)     # lanthanides
+    if 72 <= z <= 86:
+        return (5, z - 68)
+    if z in (87, 88):
+        return (6, z - 86)
+    if 89 <= z <= 103:
+        return (9, z - 86)     # actinides
+    if 104 <= z <= 118:
+        return (6, z - 100)
+    return None
+
+
+class _ElementCell(QFrame):
+    """One periodic-table box: atomic number, symbol, and an isotopes·materials count,
+    tinted by install status. Clickable when the element has data."""
+
+    _BG = {"full": "#c8e6c9", "some": "#fff3b0", "none": "#eceff1", "disabled": "#f7f7f7"}
+    _BORDER = {"full": "#66bb6a", "some": "#ffca28", "none": "#b0bec5", "disabled": "#eeeeee"}
+
+    def __init__(self, z, symbol, count, status, enabled, on_click):
+        super().__init__()
+        self._on_click = on_click if enabled else None
+        self.setFixedSize(42, 46)
+        self.setStyleSheet(
+            f"_ElementCell{{background:{self._BG[status]};"
+            f"border:1px solid {self._BORDER[status]};border-radius:3px;}}"
+        )
+        v = QVBoxLayout(self)
+        v.setContentsMargins(2, 1, 2, 1)
+        v.setSpacing(0)
+        num = QLabel(str(z))
+        num.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        num.setStyleSheet("font-size:7px;color:#777;border:0;background:transparent;")
+        sym = QLabel(symbol)
+        sym.setAlignment(Qt.AlignCenter)
+        sym.setStyleSheet("font-size:13px;font-weight:bold;border:0;background:transparent;"
+                          + ("" if enabled else "color:#c0c0c0;"))
+        cnt = QLabel(count)
+        cnt.setAlignment(Qt.AlignCenter)
+        cnt.setStyleSheet("font-size:8px;color:#555;border:0;background:transparent;")
+        v.addWidget(num)
+        v.addWidget(sym)
+        v.addWidget(cnt)
+        if enabled:
+            self.setCursor(Qt.PointingHandCursor)
+            self.setToolTip(f"{symbol} — click for isotopes + materials")
+
+    def mousePressEvent(self, event):   # noqa: N802
+        if self._on_click:
+            self._on_click()
 
 
 class _LibraryWorker(QObject):
@@ -60,30 +147,47 @@ class DataLibraryDialog(QDialog):
     def __init__(self, active_xml=None, starter_xml=None, parent=None, focus_category=None):
         super().__init__(parent)
         self.setWindowTitle("Data Library")
-        self.resize(760, 620)
+        self.resize(900, 680)
         self._active_xml = active_xml
-        self._starter_xml = starter_xml       # bundled library, for 'reset'
+        self._starter_xml = starter_xml
         self._user_dir = data.default_data_dir()
         self._thread = None
         self._worker = None
-        self._focus_category = focus_category  # scroll to this category on open
+        self._focus_category = focus_category
+        self._available_names: set[str] = set()
+        self._downloaded_els: set[str] = set()
+        self._detail_element = None
+
+        # element -> catalog materials that contain it (computed once; catalog is static)
+        self._mats_by_el: dict[str, list] = {}
+        for mspec in materials.LIBRARY.values():
+            for element in {data.element_of(n) for n in mspec.required_names()}:
+                if element:
+                    self._mats_by_el.setdefault(element, []).append(mspec)
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
-            "All nuclear data in one place. ✅ installed, ⬇ available to download. "
-            "Downloads add to your library and become active; the bundled starter set "
-            "always remains as a fallback."
+            "All nuclear data in one place. Browse <b>Materials</b> by category, or open the "
+            "<b>Elements</b> tab for the full periodic table. Downloads add to your library and "
+            "become active; the bundled starter set always remains as a fallback."
         ))
 
-        self._available_names: set[str] = set()   # cached for lazy element expansion
-        self._downloaded_els: set[str] = set()     # elements the user downloaded (deletable)
+        self.tabs = QTabWidget()
+        # --- Materials tab ---
         self.tree = QTreeWidget()
-        self.tree.itemExpanded.connect(self._on_item_expanded)
         self.tree.setHeaderLabels(["Data", "Status", "Size", ""])
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         for col in (1, 2, 3):
             self.tree.header().setSectionResizeMode(col, QHeaderView.ResizeToContents)
-        layout.addWidget(self.tree, 1)
+        self.tabs.addTab(self.tree, "Materials")
+        # --- Elements tab (periodic table <-> element detail) ---
+        self.el_stack = QStackedWidget()
+        self._pt_scroll = QScrollArea()
+        self._pt_scroll.setWidgetResizable(True)
+        self.el_stack.addWidget(self._pt_scroll)      # index 0: periodic table
+        self.el_stack.addWidget(QWidget())            # index 1: detail (rebuilt on demand)
+        self.tabs.addTab(self.el_stack, "Elements")
+        layout.addWidget(self.tabs, 1)
 
         self.status = QLabel("")
         self.status.setWordWrap(True)
@@ -109,14 +213,22 @@ class DataLibraryDialog(QDialog):
         bottom.addWidget(close)
         layout.addLayout(bottom)
 
-        self._all_buttons = [self.everything_btn, self.import_btn, self.reset_btn]
         self._populate()
 
-    # ---- build the tree ---------------------------------------------------
+    # ---- top-level rebuild ------------------------------------------------
     def _populate(self) -> None:
-        self.tree.clear()
         available = materials.available_names(self._active_xml)
+        self._available_names = set(available)
         self._downloaded_els = set(data.downloaded_elements(self._active_xml, self._starter_xml))
+        self._build_materials_tree(available)
+        self._build_periodic_page(available)
+        if self._detail_element:
+            self._show_element_detail(self._detail_element)   # refresh an open detail view
+        self.status.setText(f"Active library: {self._active_xml or '(bundled starter)'}")
+
+    # ---- Materials tab ----------------------------------------------------
+    def _build_materials_tree(self, available) -> None:
+        self.tree.clear()
         shown: set[str] = set()
         focus_item = None
         for label, keys in _MATERIAL_CATEGORIES:
@@ -129,7 +241,7 @@ class DataLibraryDialog(QDialog):
             if mspecs:
                 item = self._add_material_category(label, mspecs, available)
                 if label == "Moderators & reflectors":
-                    self._add_downloaded_sab_rows(item)   # S(α,β) live with the moderators
+                    self._add_downloaded_sab_rows(item)
                 if label == self._focus_category:
                     focus_item = item
         poison_item = self._add_poison_category(available)
@@ -138,19 +250,12 @@ class DataLibraryDialog(QDialog):
         dep_item = self._add_depletion_category()
         if self._focus_category == "Depletion":
             focus_item = dep_item
-        all_item = self._add_all_elements_category(available)
-        if self._focus_category == "All elements":
-            focus_item = all_item
-        # Expand top-level categories only (not recursively — element rows stay collapsed
-        # so their isotopes/materials fill lazily on demand). 'All elements' is heavy, so
-        # it starts collapsed unless it's the focus.
-        for i in range(self.tree.topLevelItemCount()):
-            top = self.tree.topLevelItem(i)
-            top.setExpanded(top is not all_item or top is focus_item)
+        # Collapsed on open. Only a category we were asked to focus is expanded + revealed.
         if focus_item is not None:
+            self.tabs.setCurrentIndex(0)
+            focus_item.setExpanded(True)
             self.tree.scrollToItem(focus_item)
             focus_item.setSelected(True)
-        self.status.setText(f"Active library: {self._active_xml or '(bundled starter)'}")
 
     def _cat_item(self, label: str) -> QTreeWidgetItem:
         item = QTreeWidgetItem([label, "", "", ""])
@@ -177,97 +282,21 @@ class DataLibraryDialog(QDialog):
                 need = ", ".join([*els, *sab]) or "data"
                 row.setText(1, f"⬇ needs {need}")
                 row.setText(2, data.format_size(data.size_for(elements=els, sab=sab)))
-                self._row_button(row, "Download",
+                self._row_button(self.tree, row, "Download",
                                  lambda e=list(els), s=list(sab): self._download(elements=e, sab=s))
         cat.setText(1, f"{installed}/{len(mspecs)} installed")
         if miss_el or miss_sab:
             cat.setText(2, data.format_size(data.size_for(elements=miss_el, sab=miss_sab)))
-            self._row_button(cat, "Download all",
+            self._row_button(self.tree, cat, "Download all",
                              lambda e=list(miss_el), s=list(miss_sab): self._download(elements=e, sab=s))
         return cat
 
     def _add_downloaded_sab_rows(self, moderator_cat: QTreeWidgetItem) -> None:
-        """Downloaded thermal-scattering S(α,β) tables live with the moderators, with a
-        Delete to uninstall them (their natural category, not a top block)."""
         for name in data.downloaded_sab(self._active_xml, self._starter_xml):
             row = QTreeWidgetItem([f"{name} (thermal scattering)", "✅ downloaded",
                                    data.format_size(data.sab_size(name))])
             moderator_cat.addChild(row)
-            self._row_button(row, "Delete", lambda s=name: self._delete(sab=[s]))
-
-    def _add_all_elements_category(self, available) -> QTreeWidgetItem:
-        """The complete periodic table of available data. Each element expands into its
-        individual isotopes + the materials that use it — an intuitive drill-down."""
-        self._available_names = set(available)
-        present = {data.element_of(n) for n in available}
-        elements = data.all_elements()
-        cat = self._cat_item("All elements — full ENDF/B-VIII.0 library (556 nuclides)")
-        installed = 0
-        for element in elements:
-            ok = element in present
-            downloaded = element in self._downloaded_els
-            installed += ok
-            status = ("✅ downloaded" if downloaded else "✅ installed") if ok else ""
-            row = QTreeWidgetItem([element, status,
-                                   "" if ok else data.format_size(data.element_size(element))])
-            row.setData(0, Qt.UserRole, ("element", element))
-            row.addChild(QTreeWidgetItem(["…"]))   # placeholder → expand arrow (lazy fill)
-            cat.addChild(row)
-            if downloaded:                         # user-installed → can delete to free space
-                self._row_button(row, "Delete", lambda e=element: self._delete(elements=[e]))
-            elif not ok:
-                self._row_button(row, "Download", lambda e=element: self._download(elements=[e]))
-        cat.setText(1, f"{installed}/{len(elements)} elements installed")
-        cat.setText(2, data.format_size(data.everything_size()))
-        return cat
-
-    def _on_item_expanded(self, item: QTreeWidgetItem) -> None:
-        """Lazily fill an element with its isotopes + the materials it's used in."""
-        role = item.data(0, Qt.UserRole)
-        if not (isinstance(role, tuple) and role[0] == "element"):
-            return
-        if item.data(0, Qt.UserRole + 1):   # already populated
-            return
-        item.setData(0, Qt.UserRole + 1, True)
-        element = role[1]
-        item.takeChildren()                  # drop the placeholder
-        available = self._available_names
-
-        isotopes = QTreeWidgetItem(["Isotopes (individual)", "", ""])
-        item.addChild(isotopes)
-        for nuclide in data.nuclides_of(element):
-            ok = nuclide in available
-            iso = QTreeWidgetItem([nuclide, "✅ installed" if ok else "",
-                                   "" if ok else data.format_size(data.nuclide_size(nuclide))])
-            isotopes.addChild(iso)
-            if not ok:
-                self._row_button(iso, "Download", lambda n=nuclide: self._download(nuclides=[n]))
-
-        mspecs = self._materials_using(element)
-        if mspecs:
-            used = QTreeWidgetItem([f"Used in {len(mspecs)} material(s)", "", ""])
-            item.addChild(used)
-            for mspec in mspecs:
-                ok = mspec.is_available(available)
-                mat = QTreeWidgetItem([mspec.label, "✅ installed" if ok else "", ""])
-                used.addChild(mat)
-                if not ok:
-                    els, sab = mspec.missing_data(available)
-                    mat.setText(1, "⬇ needs " + ", ".join([*els, *sab]))
-                    mat.setText(2, data.format_size(data.size_for(elements=els, sab=sab)))
-                    self._row_button(mat, "Download",
-                                     lambda e=list(els), s=list(sab): self._download(elements=e, sab=s))
-        item.setExpanded(True)
-
-    @staticmethod
-    def _materials_using(element: str) -> list:
-        """Catalog materials whose composition includes ``element``."""
-        out = []
-        for mspec in materials.LIBRARY.values():
-            names = mspec.required_names()
-            if element in {data.element_of(n) for n in names}:
-                out.append(mspec)
-        return out
+            self._row_button(self.tree, row, "Delete", lambda s=name: self._delete(sab=[s]))
 
     def _add_poison_category(self, available) -> QTreeWidgetItem:
         from nbeast.core import poisons
@@ -283,7 +312,7 @@ class DataLibraryDialog(QDialog):
             size = data.format_size(data.size_for(nuclides=nuclides))
             row.setText(2, size)
             cat.setText(2, size)
-            self._row_button(row, "Download", lambda n=nuclides: self._download(nuclides=n))
+            self._row_button(self.tree, row, "Download", lambda n=nuclides: self._download(nuclides=n))
         return cat
 
     def _add_depletion_category(self) -> QTreeWidgetItem:
@@ -296,14 +325,129 @@ class DataLibraryDialog(QDialog):
         cat.addChild(row)
         cat.setText(1, "installed" if ok else "needs setup")
         if not ok:
-            self._row_button(row, "Set up…", self._setup_depletion)
+            self._row_button(self.tree, row, "Set up…", self._setup_depletion)
         return cat
 
-    def _row_button(self, item, label, callback) -> None:
+    # ---- Elements tab: periodic table ------------------------------------
+    def _build_periodic_page(self, available) -> None:
+        host = QWidget()
+        outer = QVBoxLayout(host)
+        grid_widget = QWidget()
+        grid = QGridLayout(grid_widget)
+        grid.setSpacing(2)
+        grid.setContentsMargins(6, 6, 6, 6)
+        grid.setRowMinimumHeight(7, 12)   # gap above the lanthanide/actinide rows
+
+        import openmc.data
+
+        symbols = openmc.data.ATOMIC_SYMBOL
+        have = set(data.all_elements())
+        for z in range(1, 119):
+            symbol = symbols.get(z)
+            pos = _pt_position(z)
+            if not symbol or pos is None:
+                continue
+            row, col = pos
+            if symbol in have:
+                isotopes = data.nuclides_of(symbol)
+                installed = sum(1 for n in isotopes if n in available)
+                status = ("full" if isotopes and installed == len(isotopes)
+                          else "some" if installed else "none")
+                n_mat = len(self._mats_by_el.get(symbol, []))
+                count = f"{len(isotopes)}·{n_mat}" if n_mat else f"{len(isotopes)}"
+                cell = _ElementCell(z, symbol, count, status, True,
+                                    lambda s=symbol: self._show_element_detail(s))
+            else:
+                cell = _ElementCell(z, symbol, "", "disabled", False, None)
+            grid.addWidget(cell, row, col - 1)
+
+        outer.addWidget(grid_widget)
+        legend = QLabel(
+            "🟩 all isotopes installed   🟨 some installed   ⬜ available to download   ·   "
+            "each box: symbol + <b>isotopes·materials</b>. Click an element for details."
+        )
+        legend.setStyleSheet("color:#555;")
+        legend.setWordWrap(True)
+        outer.addWidget(legend)
+        outer.addStretch(1)
+        self._pt_scroll.setWidget(host)
+
+    def _show_periodic_table(self) -> None:
+        self._detail_element = None
+        self.el_stack.setCurrentIndex(0)
+
+    # ---- Elements tab: one element's detail ------------------------------
+    def _show_element_detail(self, symbol: str) -> None:
+        self._detail_element = symbol
+        available = self._available_names
+        isotopes = data.nuclides_of(symbol)
+        installed = sum(1 for n in isotopes if n in available)
+        mspecs = self._mats_by_el.get(symbol, [])
+
+        page = QWidget()
+        v = QVBoxLayout(page)
+        top = QHBoxLayout()
+        back = QPushButton("← Back to table")
+        back.clicked.connect(self._show_periodic_table)
+        top.addWidget(back)
+        top.addWidget(QLabel(
+            f"<b>{symbol}</b> — {len(isotopes)} isotopes · {len(mspecs)} material(s) · "
+            f"{installed}/{len(isotopes)} installed"))
+        top.addStretch(1)
+        if symbol in self._downloaded_els:
+            btn = QPushButton(f"Delete {symbol}")
+            btn.clicked.connect(lambda: self._delete(elements=[symbol]))
+            top.addWidget(btn)
+        elif installed < len(isotopes):
+            btn = QPushButton(f"Download all {symbol} ({data.format_size(data.element_size(symbol))})")
+            btn.clicked.connect(lambda: self._download(elements=[symbol]))
+            top.addWidget(btn)
+        v.addLayout(top)
+
+        detail = QTreeWidget()
+        detail.setHeaderLabels(["Data", "Status", "Size", ""])
+        detail.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        for col in (1, 2, 3):
+            detail.header().setSectionResizeMode(col, QHeaderView.ResizeToContents)
+
+        iso_head = QTreeWidgetItem(["Isotopes (individual)", "", ""])
+        detail.addTopLevelItem(iso_head)
+        for nuclide in isotopes:
+            ok = nuclide in available
+            item = QTreeWidgetItem([nuclide, "✅ installed" if ok else "",
+                                    "" if ok else data.format_size(data.nuclide_size(nuclide))])
+            iso_head.addChild(item)
+            if not ok:
+                self._row_button(detail, item, "Download", lambda n=nuclide: self._download(nuclides=[n]))
+
+        if mspecs:
+            mat_head = QTreeWidgetItem([f"Used in {len(mspecs)} material(s)", "", ""])
+            detail.addTopLevelItem(mat_head)
+            for mspec in mspecs:
+                ok = mspec.is_available(available)
+                item = QTreeWidgetItem([mspec.label, "✅ installed" if ok else "", ""])
+                mat_head.addChild(item)
+                if not ok:
+                    els, sab = mspec.missing_data(available)
+                    item.setText(1, "⬇ needs " + ", ".join([*els, *sab]))
+                    item.setText(2, data.format_size(data.size_for(elements=els, sab=sab)))
+                    self._row_button(detail, item, "Download",
+                                     lambda e=list(els), s=list(sab): self._download(elements=e, sab=s))
+        detail.expandAll()
+        v.addWidget(detail, 1)
+
+        old = self.el_stack.widget(1)
+        self.el_stack.insertWidget(1, page)
+        if old is not None:
+            self.el_stack.removeWidget(old)
+            old.deleteLater()
+        self.el_stack.setCurrentIndex(1)
+        self.tabs.setCurrentIndex(1)
+
+    def _row_button(self, tree, item, label, callback) -> None:
         button = QPushButton(label)
         button.clicked.connect(lambda _checked=False: callback())
-        self.tree.setItemWidget(item, 3, button)
-        self._all_buttons.append(button)
+        tree.setItemWidget(item, 3, button)
 
     # ---- actions ----------------------------------------------------------
     def _download(self, elements=(), nuclides=(), sab=()) -> None:
@@ -375,10 +519,11 @@ class DataLibraryDialog(QDialog):
             return
         data.reset_to_starter()
         self._active_xml = self._starter_xml
+        self._detail_element = None
         if self._starter_xml:
             self.activated.emit(self._starter_xml)
-        self.status.setText("Reset to the bundled starter library.")
         self._populate()
+        self.status.setText("Reset to the bundled starter library.")
 
     def _setup_depletion(self) -> None:
         from .depletion_setup import DepletionSetupDialog
@@ -401,9 +546,9 @@ class DataLibraryDialog(QDialog):
         self._thread.start()
 
     def _set_busy(self, busy: bool, message: str) -> None:
-        for button in self._all_buttons:
+        for button in (self.everything_btn, self.import_btn, self.reset_btn):
             button.setEnabled(not busy)
-        self.tree.setEnabled(not busy)
+        self.tabs.setEnabled(not busy)
         self.status.setText(message)
 
     def _teardown(self) -> None:
