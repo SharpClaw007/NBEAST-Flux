@@ -75,7 +75,9 @@ class DataLibraryDialog(QDialog):
             "always remains as a fallback."
         ))
 
+        self._available_names: set[str] = set()   # cached for lazy element expansion
         self.tree = QTreeWidget()
+        self.tree.itemExpanded.connect(self._on_item_expanded)
         self.tree.setHeaderLabels(["Data", "Status", "Size", ""])
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         for col in (1, 2, 3):
@@ -136,13 +138,15 @@ class DataLibraryDialog(QDialog):
         all_item = self._add_all_elements_category(available)
         if self._focus_category == "All elements":
             focus_item = all_item
-        self.tree.expandAll()
-        all_item.setExpanded(False)   # 97 rows — collapsed unless the user opens it
+        # Expand top-level categories only (not recursively — element rows stay collapsed
+        # so their isotopes/materials fill lazily on demand). 'All elements' is heavy, so
+        # it starts collapsed unless it's the focus.
+        for i in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(i)
+            top.setExpanded(top is not all_item or top is focus_item)
         if focus_item is not None:
             self.tree.scrollToItem(focus_item)
             focus_item.setSelected(True)
-            if focus_item is all_item:
-                all_item.setExpanded(True)
         self.status.setText(f"Active library: {self._active_xml or '(bundled starter)'}")
 
     def _cat_item(self, label: str) -> QTreeWidgetItem:
@@ -203,8 +207,9 @@ class DataLibraryDialog(QDialog):
         return cat
 
     def _add_all_elements_category(self, available) -> QTreeWidgetItem:
-        """The complete periodic table of available data — every element installable on
-        its own, beyond the ones the catalog materials happen to use."""
+        """The complete periodic table of available data. Each element expands into its
+        individual isotopes + the materials that use it — an intuitive drill-down."""
+        self._available_names = set(available)
         present = {data.element_of(n) for n in available}
         elements = data.all_elements()
         cat = self._cat_item("All elements — full ENDF/B-VIII.0 library (556 nuclides)")
@@ -214,6 +219,8 @@ class DataLibraryDialog(QDialog):
             installed += ok
             row = QTreeWidgetItem([element, "✅ installed" if ok else "",
                                    "" if ok else data.format_size(data.element_size(element))])
+            row.setData(0, Qt.UserRole, ("element", element))
+            row.addChild(QTreeWidgetItem(["…"]))   # placeholder → expand arrow (lazy fill)
             cat.addChild(row)
             if not ok:
                 self._row_button(row, "Download",
@@ -221,6 +228,54 @@ class DataLibraryDialog(QDialog):
         cat.setText(1, f"{installed}/{len(elements)} elements installed")
         cat.setText(2, data.format_size(data.everything_size()))
         return cat
+
+    def _on_item_expanded(self, item: QTreeWidgetItem) -> None:
+        """Lazily fill an element with its isotopes + the materials it's used in."""
+        role = item.data(0, Qt.UserRole)
+        if not (isinstance(role, tuple) and role[0] == "element"):
+            return
+        if item.data(0, Qt.UserRole + 1):   # already populated
+            return
+        item.setData(0, Qt.UserRole + 1, True)
+        element = role[1]
+        item.takeChildren()                  # drop the placeholder
+        available = self._available_names
+
+        isotopes = QTreeWidgetItem(["Isotopes (individual)", "", ""])
+        item.addChild(isotopes)
+        for nuclide in data.nuclides_of(element):
+            ok = nuclide in available
+            iso = QTreeWidgetItem([nuclide, "✅ installed" if ok else "",
+                                   "" if ok else data.format_size(data.nuclide_size(nuclide))])
+            isotopes.addChild(iso)
+            if not ok:
+                self._row_button(iso, "Download", lambda n=nuclide: self._download(nuclides=[n]))
+
+        mspecs = self._materials_using(element)
+        if mspecs:
+            used = QTreeWidgetItem([f"Used in {len(mspecs)} material(s)", "", ""])
+            item.addChild(used)
+            for mspec in mspecs:
+                ok = mspec.is_available(available)
+                mat = QTreeWidgetItem([mspec.label, "✅ installed" if ok else "", ""])
+                used.addChild(mat)
+                if not ok:
+                    els, sab = mspec.missing_data(available)
+                    mat.setText(1, "⬇ needs " + ", ".join([*els, *sab]))
+                    mat.setText(2, data.format_size(data.size_for(elements=els, sab=sab)))
+                    self._row_button(mat, "Download",
+                                     lambda e=list(els), s=list(sab): self._download(elements=e, sab=s))
+        item.setExpanded(True)
+
+    @staticmethod
+    def _materials_using(element: str) -> list:
+        """Catalog materials whose composition includes ``element``."""
+        out = []
+        for mspec in materials.LIBRARY.values():
+            names = mspec.required_names()
+            if element in {data.element_of(n) for n in names}:
+                out.append(mspec)
+        return out
 
     def _add_poison_category(self, available) -> QTreeWidgetItem:
         from nbeast.core import poisons

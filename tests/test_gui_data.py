@@ -44,6 +44,26 @@ def test_data_library_exposes_every_element(qapp):
     dialog.close()
 
 
+def test_element_drilldown_shows_isotopes_and_materials(qapp):
+    """Expanding an element reveals its individual isotopes + the materials that use it."""
+    from nbeast.gui.data_library import DataLibraryDialog
+
+    dialog = DataLibraryDialog(active_xml=None, starter_xml=None)
+    all_cat = next(dialog.tree.topLevelItem(i) for i in range(dialog.tree.topLevelItemCount())
+                   if "All elements" in dialog.tree.topLevelItem(i).text(0))
+    u = next(all_cat.child(j) for j in range(all_cat.childCount()) if all_cat.child(j).text(0) == "U")
+    dialog._on_item_expanded(u)   # lazy fill
+
+    subs = [u.child(k) for k in range(u.childCount())]
+    iso = next(s for s in subs if "Isotopes" in s.text(0))
+    isotopes = [iso.child(m).text(0) for m in range(iso.childCount())]
+    assert "U235" in isotopes and "U238" in isotopes
+    used = next(s for s in subs if "Used in" in s.text(0))
+    mats = [used.child(m).text(0) for m in range(used.childCount())]
+    assert any("UO" in m for m in mats)                # UO₂ uses U
+    dialog.close()
+
+
 def test_data_library_shows_status_and_sizes(qapp):
     """With the bundled H/O/U/Zr library active, installed materials read 'installed'
     and needs-data ones show which nuclides + an approximate size."""

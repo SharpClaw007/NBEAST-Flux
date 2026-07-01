@@ -89,6 +89,17 @@ def all_elements() -> list[str]:
     return sorted(_SIZES.get("elements", {}), key=z)
 
 
+def nuclides_of(element: str) -> list[str]:
+    """The nuclides of an element that have data, in mass-number order."""
+    def mass(name: str) -> int:
+        import re
+
+        match = re.search(r"(\d+)", name)
+        return int(match.group(1)) if match else 0
+
+    return sorted((n for n in _SIZES.get("nuclides", {}) if element_of(n) == element), key=mass)
+
+
 def size_for(elements=(), nuclides=(), sab=()) -> int:
     """Approximate download size (bytes) for a selection of elements/nuclides/S(α,β)."""
     total = sum(element_size(e) for e in elements)
