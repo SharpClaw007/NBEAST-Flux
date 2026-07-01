@@ -64,6 +64,40 @@ def test_element_drilldown_shows_isotopes_and_materials(qapp):
     dialog.close()
 
 
+def test_downloaded_items_sort_into_categories(qapp, monkeypatch):
+    """Downloaded data lives in its category (deletable there), not a top-pinned block:
+    elements → 'All elements' with Delete, S(α,β) → Moderators with Delete."""
+    from nbeast.core import data, materials
+    from nbeast.gui.data_library import DataLibraryDialog
+
+    xs = os.environ.get("OPENMC_CROSS_SECTIONS")
+    if not xs:
+        return
+    bundle = materials.available_names(xs)
+    monkeypatch.setattr(data, "downloaded_elements", lambda a, s: ["Pu"])
+    monkeypatch.setattr(data, "downloaded_sab", lambda a, s: ["c_D_in_D2O"])
+    monkeypatch.setattr(materials, "available_names",
+                        lambda x: set(bundle) | {"Pu239", "Pu240", "c_D_in_D2O"})
+
+    dialog = DataLibraryDialog(active_xml=xs, starter_xml=xs)
+    cats = [dialog.tree.topLevelItem(i).text(0) for i in range(dialog.tree.topLevelItemCount())]
+    assert not any("Installed downloads" in c for c in cats)   # no top block
+    assert cats[0] == "Fuels"
+
+    # Pu (downloaded) shows Delete in All elements
+    all_cat = next(dialog.tree.topLevelItem(i) for i in range(dialog.tree.topLevelItemCount())
+                   if "All elements" in dialog.tree.topLevelItem(i).text(0))
+    pu = next(all_cat.child(j) for j in range(all_cat.childCount()) if all_cat.child(j).text(0) == "Pu")
+    assert dialog.tree.itemWidget(pu, 3).text() == "Delete" and "downloaded" in pu.text(1)
+
+    # downloaded S(α,β) shows in Moderators with Delete
+    mod = next(dialog.tree.topLevelItem(i) for i in range(dialog.tree.topLevelItemCount())
+               if dialog.tree.topLevelItem(i).text(0) == "Moderators & reflectors")
+    sab = [mod.child(j) for j in range(mod.childCount()) if "thermal scattering" in mod.child(j).text(0)]
+    assert sab and dialog.tree.itemWidget(sab[0], 3).text() == "Delete"
+    dialog.close()
+
+
 def test_data_library_shows_status_and_sizes(qapp):
     """With the bundled H/O/U/Zr library active, installed materials read 'installed'
     and needs-data ones show which nuclides + an approximate size."""

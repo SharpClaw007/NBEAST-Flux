@@ -56,6 +56,16 @@ def heu_metal_godiva() -> openmc.Material:
     return m
 
 
+def plutonium_metal(density: float = 19.84) -> openmc.Material:
+    """Plutonium metal (weapons-grade) — the bare fast-metal sphere analogue of Godiva
+    (cf. the Jezebel Pu-239 criticality benchmark). Uses only Pu data."""
+    m = openmc.Material(name="Plutonium metal")
+    m.add_nuclide("Pu239", 0.94, "wo")
+    m.add_nuclide("Pu240", 0.06, "wo")
+    m.set_density("g/cm3", density)
+    return m
+
+
 def mox(pu_fraction: float = 0.07, density: float = 10.4) -> openmc.Material:
     """Mixed-oxide (U,Pu)O2 fuel — depleted U + reactor-grade Pu vector."""
     m = openmc.Material(name=f"MOX ({pu_fraction * 100:g}% Pu)")
@@ -367,6 +377,7 @@ _MATERIALS: tuple[MaterialSpec, ...] = (
     MaterialSpec("uo2", "UO₂ fuel", ("fuel",), uo2, enrichment=True),
     MaterialSpec("u_metal", "Uranium metal", ("fuel",), u_metal, enrichment=True),
     MaterialSpec("heu_metal_godiva", "HEU metal (Godiva)", ("fuel",), heu_metal_godiva),
+    MaterialSpec("plutonium_metal", "Plutonium metal (Jezebel)", ("fuel",), plutonium_metal),
     MaterialSpec("mox", "MOX (U,Pu)O₂", ("fuel",), mox),
     MaterialSpec("uo2_gd", "UO₂ + Gd₂O₃", ("fuel",), uo2_gd, enrichment=True),
     MaterialSpec("u3si2", "U₃Si₂", ("fuel",), u3si2, enrichment=True),

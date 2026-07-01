@@ -76,6 +76,7 @@ class DataLibraryDialog(QDialog):
         ))
 
         self._available_names: set[str] = set()   # cached for lazy element expansion
+        self._downloaded_els: set[str] = set()     # elements the user downloaded (deletable)
         self.tree = QTreeWidget()
         self.tree.itemExpanded.connect(self._on_item_expanded)
         self.tree.setHeaderLabels(["Data", "Status", "Size", ""])
@@ -115,9 +116,9 @@ class DataLibraryDialog(QDialog):
     def _populate(self) -> None:
         self.tree.clear()
         available = materials.available_names(self._active_xml)
+        self._downloaded_els = set(data.downloaded_elements(self._active_xml, self._starter_xml))
         shown: set[str] = set()
         focus_item = None
-        self._add_downloaded_category()   # per-element uninstall, if anything's downloaded
         for label, keys in _MATERIAL_CATEGORIES:
             mspecs = []
             for key in keys:
@@ -127,6 +128,8 @@ class DataLibraryDialog(QDialog):
                         shown.add(mspec.key)
             if mspecs:
                 item = self._add_material_category(label, mspecs, available)
+                if label == "Moderators & reflectors":
+                    self._add_downloaded_sab_rows(item)   # S(α,β) live with the moderators
                 if label == self._focus_category:
                     focus_item = item
         poison_item = self._add_poison_category(available)
@@ -183,28 +186,14 @@ class DataLibraryDialog(QDialog):
                              lambda e=list(miss_el), s=list(miss_sab): self._download(elements=e, sab=s))
         return cat
 
-    def _add_downloaded_category(self) -> QTreeWidgetItem | None:
-        elements = data.downloaded_elements(self._active_xml, self._starter_xml)
-        sabs = data.downloaded_sab(self._active_xml, self._starter_xml)
-        if not elements and not sabs:
-            return None
-        cat = self._cat_item("Installed downloads — delete to free space")
-        total = 0
-        for element in elements:
-            size = data.element_size(element)
-            total += size
-            row = QTreeWidgetItem([f"{element} (element)", "✅ downloaded", data.format_size(size)])
-            cat.addChild(row)
-            self._row_button(row, "Delete", lambda e=element: self._delete(elements=[e]))
-        for name in sabs:
-            size = data.sab_size(name)
-            total += size
-            row = QTreeWidgetItem([name, "✅ downloaded", data.format_size(size)])
-            cat.addChild(row)
+    def _add_downloaded_sab_rows(self, moderator_cat: QTreeWidgetItem) -> None:
+        """Downloaded thermal-scattering S(α,β) tables live with the moderators, with a
+        Delete to uninstall them (their natural category, not a top block)."""
+        for name in data.downloaded_sab(self._active_xml, self._starter_xml):
+            row = QTreeWidgetItem([f"{name} (thermal scattering)", "✅ downloaded",
+                                   data.format_size(data.sab_size(name))])
+            moderator_cat.addChild(row)
             self._row_button(row, "Delete", lambda s=name: self._delete(sab=[s]))
-        cat.setText(1, f"{len(elements) + len(sabs)} downloaded")
-        cat.setText(2, data.format_size(total))
-        return cat
 
     def _add_all_elements_category(self, available) -> QTreeWidgetItem:
         """The complete periodic table of available data. Each element expands into its
@@ -216,15 +205,18 @@ class DataLibraryDialog(QDialog):
         installed = 0
         for element in elements:
             ok = element in present
+            downloaded = element in self._downloaded_els
             installed += ok
-            row = QTreeWidgetItem([element, "✅ installed" if ok else "",
+            status = ("✅ downloaded" if downloaded else "✅ installed") if ok else ""
+            row = QTreeWidgetItem([element, status,
                                    "" if ok else data.format_size(data.element_size(element))])
             row.setData(0, Qt.UserRole, ("element", element))
             row.addChild(QTreeWidgetItem(["…"]))   # placeholder → expand arrow (lazy fill)
             cat.addChild(row)
-            if not ok:
-                self._row_button(row, "Download",
-                                 lambda e=element: self._download(elements=[e]))
+            if downloaded:                         # user-installed → can delete to free space
+                self._row_button(row, "Delete", lambda e=element: self._delete(elements=[e]))
+            elif not ok:
+                self._row_button(row, "Download", lambda e=element: self._download(elements=[e]))
         cat.setText(1, f"{installed}/{len(elements)} elements installed")
         cat.setText(2, data.format_size(data.everything_size()))
         return cat

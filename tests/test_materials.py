@@ -9,9 +9,16 @@ BUNDLE = {
 }
 
 
+def test_plutonium_metal_is_a_fuel_needing_only_pu():
+    spec = materials.LIBRARY["plutonium_metal"]
+    assert "fuel" in spec.categories             # selectable in Godiva's fuel dropdown
+    assert set(spec.build().get_nuclides()) == {"Pu239", "Pu240"}
+    assert spec.required_names() == {"Pu239", "Pu240"}   # only needs Pu data
+
+
 def test_categories_and_multi_role_membership():
     fuels = {m.key for m in materials.by_category("fuel")}
-    assert {"uo2", "u_metal", "heu_metal_godiva", "mox"} <= fuels
+    assert {"uo2", "u_metal", "heu_metal_godiva", "mox", "plutonium_metal"} <= fuels
     assert "steel_304" in {m.key for m in materials.by_category("cladding")}
     # water fills two roles
     assert "water" in {m.key for m in materials.by_category("moderator")}
