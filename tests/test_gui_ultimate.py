@@ -192,6 +192,48 @@ def test_all_dialogs_construct_per_eigen_template(qapp, tmp_path):
     win.close()
 
 
+def test_units_toggle_converts_geometry(qapp, tmp_path):
+    """The SI/US toggle converts the model-tree length display + editors (cm ↔ in),
+    round-tripping through the canonical cm storage."""
+    from PySide6.QtWidgets import QDoubleSpinBox
+
+    win = _win(tmp_path)
+    win.set_template("Pin cell")
+    pitch_key = next(p.key for p in win.spec.parameters if "pitch" in p.label.lower())
+    cm = win._param_values["Pin cell"][pitch_key]
+
+    def pitch_row():
+        tree = win.model_tree
+        geo = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+                   if tree.topLevelItem(i).text(0) == "Geometry")
+        return next(geo.child(i).text(0) for i in range(geo.childCount())
+                    if "pitch" in geo.child(i).text(0).lower())
+
+    assert pitch_row().endswith("cm")
+    win.units_combo.setCurrentIndex(1)                       # US
+    assert pitch_row().endswith("in")
+    assert f"{cm / 2.54:.4f}" in pitch_row()
+    # edit in inches -> stored back in cm
+    geo = next(win.model_tree.topLevelItem(i) for i in range(win.model_tree.topLevelItemCount())
+               if win.model_tree.topLevelItem(i).text(0) == "Geometry")
+    win._on_tree_click(geo, 0)
+    row = next(r for r in range(win.properties.rowCount())
+               if "pitch" in win.properties.item(r, 0).text().lower())
+    assert isinstance(win.properties.cellWidget(row, 1), QDoubleSpinBox)
+    win.properties.cellWidget(row, 1).setValue(0.5)
+    assert abs(win._param_values["Pin cell"][pitch_key] - 1.27) < 1e-6
+    win.units_combo.setCurrentIndex(0)                       # back to SI
+    assert pitch_row().endswith("cm")
+    win.close()
+
+
+def test_field_bar_title_relative_by_default(qapp, tmp_path):
+    win = _win(tmp_path)
+    assert not win._absolute_units()
+    assert "relative" in win._field_bar_title("flux")
+    win.close()
+
+
 def test_load_examples_and_history(qapp, tmp_path):
     win = _win(tmp_path)
     for key in ("godiva", "pincell", "assembly", "shield"):

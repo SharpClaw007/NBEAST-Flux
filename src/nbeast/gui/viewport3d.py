@@ -36,17 +36,20 @@ class FluxViewport(QWidget):
         self._vtk_path: str | None = None
         self._scalar = "flux"
         self._title = "Flux"
+        self._bar_title: str | None = None
         self._tracks = None
 
     @staticmethod
     def _headless() -> bool:
         return os.environ.get("QT_QPA_PLATFORM", "") == "offscreen"
 
-    def show_field(self, vtk_path, scalar: str = "flux", title: str = "Flux") -> None:
+    def show_field(self, vtk_path, scalar: str = "flux", title: str = "Flux",
+                   bar_title: str | None = None) -> None:
         self._tracks = None
         self._vtk_path = str(vtk_path)
         self._scalar = scalar
         self._title = title
+        self._bar_title = bar_title
         self.render_flux()
 
     def show_tracks(self, polylines, title: str = "Neutron tracks") -> None:
@@ -109,7 +112,7 @@ class FluxViewport(QWidget):
 
     def show_field_volume(self, values, dims, lower_left, upper_right, *,
                           log: bool = True, stls=None, colors=None, labels=None,
-                          title: str = "Scalar flux") -> None:
+                          bar_title: str | None = None, title: str = "Scalar flux") -> None:
         """Publication-style 3D volume render of a field (log scale + colorbar +
         opacity transfer function), with optional semi-transparent geometry overlay.
 
@@ -128,12 +131,11 @@ class FluxViewport(QWidget):
 
             nx, ny, nz = (int(d) for d in dims)
             field = np.asarray(values, dtype=float).ravel()
-            label = title
             if log:
                 positive = field[field > 0]
                 floor = positive.min() if positive.size else 1e-30
                 field = np.log10(np.where(field > 0, field, floor))
-                label = f"log₁₀ {title}"
+            label = bar_title or (f"log₁₀ {title}" if log else title)
 
             # Clip the colour/opacity window to the *real* data so the empty/low
             # cells don't compress the gradient (they fall below clim -> transparent).
@@ -173,7 +175,8 @@ class FluxViewport(QWidget):
             self._placeholder.show()
             self._placeholder.setText(f"3D view error: {exc}")
 
-    def show_field_array(self, values, lower_left, upper_right, title: str = "Flux map") -> None:
+    def show_field_array(self, values, lower_left, upper_right, title: str = "Flux map",
+                         bar_title: str | None = None) -> None:
         """Render a 2D field (e.g. a z-integrated CAD flux map) from a raw array."""
         self._vtk_path = None
         self._tracks = None
@@ -197,7 +200,8 @@ class FluxViewport(QWidget):
 
             interactor = self._ensure_interactor()
             interactor.clear()
-            interactor.add_mesh(grid, scalars="flux", cmap="viridis", show_edges=False)
+            interactor.add_mesh(grid, scalars="flux", cmap="viridis", show_edges=False,
+                                scalar_bar_args={"title": bar_title or "flux"})
             interactor.add_text(title, font_size=10, name="title")
             interactor.enable_parallel_projection()
             interactor.view_xy()
@@ -249,7 +253,8 @@ class FluxViewport(QWidget):
             interactor = self._ensure_interactor()
             surface = flat_flux_surface(self._vtk_path)
             interactor.clear()
-            interactor.add_mesh(surface, scalars=self._scalar, cmap="viridis", show_edges=False)
+            interactor.add_mesh(surface, scalars=self._scalar, cmap="viridis", show_edges=False,
+                                scalar_bar_args={"title": self._bar_title or self._scalar})
             interactor.add_text(self._title, font_size=10, name="title")
             interactor.enable_parallel_projection()
             interactor.view_xy()

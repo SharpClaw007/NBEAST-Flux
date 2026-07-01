@@ -89,6 +89,8 @@ class MainWindow(QMainWindow):
         # Custom-CAD template state (populated by the CAD import dialog).
         self._cad = {"step": None, "materials": []}
         self._cad_dialog = None   # the non-modal CAD import panel, when open
+        self._unit_system = "SI"  # display units (SI / US-Imperial)
+        self._power_w = 0.0       # reactor power for absolute units; 0 = relative maps
         self._total_batches = 0
         self._statepoint: str | None = None
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
@@ -226,6 +228,18 @@ class MainWindow(QMainWindow):
         self.stop_action.setToolTip("Stop the running simulation (keeps results so far).")
         self.stop_action.triggered.connect(self.stop_run)
         tb.addAction(self.stop_action)
+
+        tb.addSeparator()
+        tb.addWidget(QLabel(" Units: "))
+        self.units_combo = QComboBox()
+        self.units_combo.addItems(["Metric (SI)", "US (Imperial)"])
+        self.units_combo.setToolTip(
+            "Display unit system. Geometry shows cm ↔ in; result maps are relative "
+            "(per source neutron) until you set a reactor power in Settings, then they "
+            "read absolute units (n/cm²·s ↔ n/in²·s, Sv/h ↔ rem/h)."
+        )
+        self.units_combo.currentIndexChanged.connect(self._on_units_changed)
+        tb.addWidget(self.units_combo)
 
         # Run-settings widgets are the canonical state but live in the Model tree's
         # Settings group (edited in Properties), not on the toolbar. Parented to the
@@ -370,12 +384,49 @@ class MainWindow(QMainWindow):
         self._param_values[self._template][key] = value
         self._refresh_tree()  # reflect new value in the tree (not Properties — keep editor focus)
 
+    # ---- display units ----------------------------------------------------
+    def _absolute_units(self) -> bool:
+        """Field maps are absolute (rate) units only when a reactor power is set."""
+        return self._power_w > 0
+
+    def _on_units_changed(self, index: int) -> None:
+        self._unit_system = "US" if index == 1 else "SI"
+        self._refresh_tree()
+        item = self.model_tree.currentItem()
+        if item is not None:           # re-render an open Properties editor in the new unit
+            self._on_tree_click(item, 0)
+        # re-render the field on screen so its colorbar unit updates
+        if self.tabs.currentWidget() is self.flux_view and self._statepoint \
+                and self.results_list.isEnabled():
+            current = self.results_list.currentItem()
+            if current is not None:
+                self._on_results_clicked(current)
+
+    def _field_bar_title(self, score: str) -> str:
+        from nbeast.core import units
+
+        return units.colorbar_title(score, self._unit_system, self._absolute_units())
+
     def _value_text(self, param: specs.Parameter) -> str:
+        from nbeast.core import units
+
         value = self._param_values[self._template][param.key]
+        if units.is_length(param.unit):
+            disp = units.cm_to_display(value, self._unit_system)
+            u = units.length_unit(self._unit_system)
+            dec = param.decimals + (1 if self._unit_system == units.US else 0)
+            return f"{param.label} = {disp:.{dec}f} {u}"
         unit = f" {param.unit}" if param.unit else ""
         if param.kind == "int":
             return f"{param.label} = {int(value)}{unit}"
         return f"{param.label} = {value:.{param.decimals}f}{unit}"
+
+    def _param_row_label(self, param: specs.Parameter) -> str:
+        """Property-row label with the unit in the current system (cm ↔ in)."""
+        from nbeast.core import units
+
+        unit = units.length_unit(self._unit_system) if units.is_length(param.unit) else param.unit
+        return f"{param.label} ({unit})" if unit else param.label
 
     def _settings_tree_item(self) -> QTreeWidgetItem:
         settings = QTreeWidgetItem(["Settings"])
@@ -490,26 +541,31 @@ class MainWindow(QMainWindow):
             self._particles_editor.setValue(self.particles_spin.value())
 
     def _make_param_editor(self, p: specs.Parameter):
+        from nbeast.core import units
+
         value = self._param_values[self._template][p.key]
         if p.kind == "int":
             editor = QSpinBox()
             editor.setRange(int(p.minimum), int(p.maximum))
             editor.setSingleStep(int(p.step))
             editor.setValue(int(value))
-        else:
-            editor = QDoubleSpinBox()
-            editor.setRange(p.minimum, p.maximum)
-            editor.setSingleStep(p.step)
-            editor.setDecimals(p.decimals)
-            editor.setValue(value)
-        editor.valueChanged.connect(lambda v, key=p.key: self.set_param(key, v))
+            editor.valueChanged.connect(lambda v, key=p.key: self.set_param(key, v))
+            return editor
+        # Length params are stored in cm but shown/edited in the display unit; the
+        # editor converts back to cm before writing.
+        f = units.CM_PER_INCH if (units.is_length(p.unit) and self._unit_system == units.US) else 1.0
+        editor = QDoubleSpinBox()
+        editor.setRange(p.minimum / f, p.maximum / f)
+        editor.setSingleStep(p.step / f)
+        editor.setDecimals(p.decimals + (1 if f != 1.0 else 0))
+        editor.setValue(value / f)
+        editor.valueChanged.connect(lambda v, key=p.key, fac=f: self.set_param(key, v * fac))
         return editor
 
     def _render_param_editors(self, group: str, params: list[specs.Parameter]) -> None:
         self.properties.setRowCount(len(params))
         for row, p in enumerate(params):
-            label = f"{p.label} ({p.unit})" if p.unit else p.label
-            self.properties.setItem(row, 0, QTableWidgetItem(label))
+            self.properties.setItem(row, 0, QTableWidgetItem(self._param_row_label(p)))
             self.properties.setCellWidget(row, 1, self._make_param_editor(p))
 
     def _render_materials_editors(self) -> None:
@@ -525,8 +581,7 @@ class MainWindow(QMainWindow):
             self.properties.setCellWidget(row, 1, self._make_material_combo(role, available))
             row += 1
         for p in params:
-            label = f"{p.label} ({p.unit})" if p.unit else p.label
-            self.properties.setItem(row, 0, QTableWidgetItem(label))
+            self.properties.setItem(row, 0, QTableWidgetItem(self._param_row_label(p)))
             self.properties.setCellWidget(row, 1, self._make_param_editor(p))
             row += 1
 
@@ -775,7 +830,8 @@ class MainWindow(QMainWindow):
             vtk = Path(self._statepoint).parent / f"{label}.vtk"
             with Results(self._statepoint) as results:
                 results.field_to_vtk(vtk, score=tally_score, name=tally_name, label=label)
-            self.flux_view.show_field(vtk, score, FIELD_TITLES.get(score, score))
+            self.flux_view.show_field(vtk, score, FIELD_TITLES.get(score, score),
+                                      bar_title=self._field_bar_title(score))
             if switch_tab:
                 self.tabs.setCurrentWidget(self.flux_view)
         except Exception as exc:  # noqa: BLE001
@@ -799,7 +855,8 @@ class MainWindow(QMainWindow):
         try:
             with Results(self._statepoint) as results:
                 values, dims, lower, upper = results.flux_volume()
-            self.flux_view.show_field_volume(values, dims, lower, upper, title="Scalar flux")
+            self.flux_view.show_field_volume(values, dims, lower, upper, title="Scalar flux",
+                                             bar_title=self._field_bar_title("flux"))
             self.tabs.setCurrentWidget(self.flux_view)
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"Volume render unavailable: {exc}")
@@ -1121,7 +1178,7 @@ class MainWindow(QMainWindow):
             self.flux_view.show_field_volume(
                 res["flux_volume"], res["vol_dims"], (b[0], b[1], b[2]), (b[3], b[4], b[5]),
                 stls=res.get("stls"), colors=res.get("colors"), labels=res.get("labels"),
-                title="CAD scalar flux",
+                bar_title=self._field_bar_title("flux"), title="CAD scalar flux",
             )
         elif not sp and res.get("flux_map") and res.get("map_bounds"):
             b = res["map_bounds"]
