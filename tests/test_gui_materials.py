@@ -83,6 +83,23 @@ def test_needs_data_material_blocks_run(qapp, tmp_path):
     win.close()
 
 
+def test_downloaded_element_appears_in_material_dropdown(qapp, tmp_path):
+    """A downloaded element shows up as an assignable material in any geometry slot."""
+    from nbeast.core import materials
+
+    win = _win(tmp_path)                          # active library = bundled H/O/U/Zr
+    materials.refresh_auto_materials(win._cross_sections, None)   # treat them as downloaded
+    try:
+        win.set_template("Godiva")
+        win._render_materials_editors()
+        combo = win.properties.cellWidget(0, 1)   # Godiva core-material slot
+        keys = [combo.itemData(i) for i in range(combo.count())]
+        assert "element_U" in keys                # downloaded uranium selectable for Godiva
+    finally:
+        materials.refresh_auto_materials(None, None)
+    win.close()
+
+
 def test_data_library_category_for_material(qapp, tmp_path):
     """A needs-data material opens the Data Library scrolled to its category."""
     from nbeast.core import materials

@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
         self._statepoint: str | None = None
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
         self._starter_xml = self._cross_sections  # the bundled library ('reset' target)
+        materials.refresh_auto_materials(self._cross_sections, self._starter_xml)
         self.last_result = None
         self.last_diagnostics = None
 
@@ -1435,6 +1436,10 @@ class MainWindow(QMainWindow):
         os.environ["OPENMC_CROSS_SECTIONS"] = path
         openmc.config["cross_sections"] = path
         self._cross_sections = path
+        # Downloaded elements become selectable materials; refresh the dropdowns now.
+        materials.refresh_auto_materials(path, self._starter_xml)
+        if getattr(self, "_template", None):
+            self._render_materials_editors()
         self.statusBar().showMessage(f"Active cross-section library: {path}")
 
     def _on_export(self) -> None:

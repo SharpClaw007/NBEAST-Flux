@@ -412,10 +412,100 @@ _MATERIALS: tuple[MaterialSpec, ...] = (
 LIBRARY: dict[str, MaterialSpec] = {m.key: m for m in _MATERIALS}
 
 
+# ---------------------------------------------------------------------------
+# Auto element materials — every element the user has downloaded becomes a
+# selectable pure-element material (so installed data is directly usable, not
+# just when a curated recipe happens to reference it). Built from the installed
+# isotopes at natural abundance (or the pure isotope, if that is all there is),
+# at a standard-condition density.
+# ---------------------------------------------------------------------------
+# Standard densities (g/cm³) at ~STP; gases at their gas density. Best-effort
+# reference values — enough to model with; the user can refine geometry/enrichment.
+_ELEMENT_DENSITY: dict[str, float] = {
+    "H": 8.99e-5, "He": 1.785e-4, "Li": 0.534, "Be": 1.85, "B": 2.34, "C": 2.267,
+    "N": 1.251e-3, "O": 1.429e-3, "F": 1.696e-3, "Ne": 9.0e-4, "Na": 0.971, "Mg": 1.738,
+    "Al": 2.70, "Si": 2.3296, "P": 1.823, "S": 2.067, "Cl": 3.214e-3, "Ar": 1.784e-3,
+    "K": 0.862, "Ca": 1.54, "Sc": 2.989, "Ti": 4.54, "V": 6.11, "Cr": 7.15, "Mn": 7.44,
+    "Fe": 7.874, "Co": 8.86, "Ni": 8.912, "Cu": 8.96, "Zn": 7.134, "Ga": 5.907,
+    "Ge": 5.323, "As": 5.776, "Se": 4.809, "Br": 3.122, "Kr": 3.733e-3, "Rb": 1.532,
+    "Sr": 2.64, "Y": 4.469, "Zr": 6.506, "Nb": 8.57, "Mo": 10.22, "Tc": 11.5,
+    "Ru": 12.37, "Rh": 12.41, "Pd": 12.02, "Ag": 10.501, "Cd": 8.69, "In": 7.31,
+    "Sn": 7.287, "Sb": 6.685, "Te": 6.232, "I": 4.93, "Xe": 5.887e-3, "Cs": 1.873,
+    "Ba": 3.594, "La": 6.145, "Ce": 6.77, "Pr": 6.773, "Nd": 7.007, "Pm": 7.26,
+    "Sm": 7.52, "Eu": 5.243, "Gd": 7.895, "Tb": 8.229, "Dy": 8.55, "Ho": 8.795,
+    "Er": 9.066, "Tm": 9.321, "Yb": 6.965, "Lu": 9.84, "Hf": 13.31, "Ta": 16.654,
+    "W": 19.25, "Re": 21.02, "Os": 22.59, "Ir": 22.56, "Pt": 21.46, "Au": 19.282,
+    "Hg": 13.5336, "Tl": 11.85, "Pb": 11.342, "Bi": 9.807, "Po": 9.32, "Rn": 9.73e-3,
+    "Ra": 5.5, "Ac": 10.07, "Th": 11.72, "Pa": 15.37, "U": 19.1, "Np": 20.45,
+    "Pu": 19.816, "Am": 12.0, "Cm": 13.51, "Bk": 14.78, "Cf": 15.1,
+}
+_ACTINIDES = {"Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf",
+              "Es", "Fm", "Md", "No", "Lr"}
+_GASES = {"H", "He", "N", "O", "F", "Ne", "Cl", "Ar", "Kr", "Xe", "Rn"}
+
+# Auto materials keyed by element (rebuilt from the active library on demand).
+_AUTO: dict[str, MaterialSpec] = {}
+
+
+def _auto_category(symbol: str) -> tuple[str, ...]:
+    if symbol in _ACTINIDES:
+        return ("fuel", "structural")   # fissionable metals — usable as fuel or structure
+    if symbol in _GASES:
+        return ("coolant",)
+    return ("structural",)
+
+
+def element_material(symbol: str, isotopes, density: float | None = None) -> openmc.Material:
+    """A pure-element material from the given installed isotopes — natural abundance if
+    all are naturally occurring, otherwise an equal atom mix (covers pure/synthetic)."""
+    from openmc.data import NATURAL_ABUNDANCE
+
+    isotopes = list(isotopes)
+    m = openmc.Material(name=f"{symbol} (element)")
+    abundance = {i: NATURAL_ABUNDANCE.get(i, 0.0) for i in isotopes}
+    if isotopes and all(abundance[i] > 0 for i in isotopes):
+        for i in isotopes:
+            m.add_nuclide(i, abundance[i], "ao")
+    else:
+        for i in isotopes:
+            m.add_nuclide(i, 1.0, "ao")   # openmc normalizes → equal atom fractions
+    m.set_density("g/cm3", _ELEMENT_DENSITY.get(symbol, 10.0) if density is None else density)
+    return m
+
+
+def _make_element_factory(symbol, isotopes, density):
+    def factory():
+        return element_material(symbol, isotopes, density)
+    return factory
+
+
+def refresh_auto_materials(active_xml, starter_xml=None) -> None:
+    """Regenerate the auto element materials for the active library and merge them into
+    LIBRARY. Every element the user has downloaded (present in the active library but not
+    the bundled starter) becomes a selectable ``element_<sym>`` material."""
+    from . import data
+
+    available = available_names(active_xml)
+    specs: dict[str, MaterialSpec] = {}
+    for symbol in data.downloaded_elements(active_xml, starter_xml):
+        isotopes = [n for n in data.nuclides_of(symbol) if n in available]
+        if not isotopes:
+            continue
+        key = f"element_{symbol}"
+        specs[key] = MaterialSpec(key, f"{symbol} (element)", _auto_category(symbol),
+                                  _make_element_factory(symbol, isotopes,
+                                                        _ELEMENT_DENSITY.get(symbol, 10.0)))
+    _AUTO.clear()
+    _AUTO.update(specs)
+    LIBRARY.clear()
+    LIBRARY.update({m.key: m for m in _MATERIALS})
+    LIBRARY.update(_AUTO)
+
+
 def by_category(category: str) -> list[MaterialSpec]:
-    """Materials that can fill a given role, available-first then alphabetical-ish
-    (catalog order preserved within each group)."""
-    return [m for m in _MATERIALS if category in m.categories]
+    """Materials that can fill a given role, in catalog order then any auto element
+    materials for that role."""
+    return [m for m in LIBRARY.values() if category in m.categories]
 
 
 def get(key: str) -> MaterialSpec:

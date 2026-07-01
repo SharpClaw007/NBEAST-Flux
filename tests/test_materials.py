@@ -16,6 +16,28 @@ def test_plutonium_metal_is_a_fuel_needing_only_pu():
     assert spec.required_names() == {"Pu239", "Pu240"}   # only needs Pu data
 
 
+def test_downloaded_element_becomes_a_material(tmp_path):
+    """Every element the user downloads becomes a selectable pure-element material."""
+    active = tmp_path / "cross_sections.xml"
+    active.write_text('<?xml version="1.0"?><cross_sections>'
+                      '<library materials="U235" path="a" type="neutron"/>'
+                      '<library materials="U238" path="b" type="neutron"/>'
+                      "</cross_sections>")
+    starter = tmp_path / "starter.xml"
+    starter.write_text('<?xml version="1.0"?><cross_sections></cross_sections>')
+    materials.refresh_auto_materials(str(active), str(starter))
+    try:
+        spec = materials.LIBRARY["element_U"]
+        assert "fuel" in spec.categories                       # actinide → usable as fuel
+        assert set(spec.build().get_nuclides()) == {"U235", "U238"}   # only installed isotopes
+        assert spec.is_available({"U235", "U238"})
+        assert "element_U" in [m.key for m in materials.by_category("fuel")]
+        assert materials.build("element_U").density                    # resolves via build()
+    finally:
+        materials.refresh_auto_materials(None, None)            # restore LIBRARY to catalog
+    assert "element_U" not in materials.LIBRARY
+
+
 def test_categories_and_multi_role_membership():
     fuels = {m.key for m in materials.by_category("fuel")}
     assert {"uo2", "u_metal", "heu_metal_godiva", "mox", "plutonium_metal"} <= fuels
