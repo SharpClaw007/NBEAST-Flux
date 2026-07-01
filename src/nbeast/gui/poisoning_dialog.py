@@ -112,7 +112,7 @@ class PoisoningDialog(QDialog):
             )
 
     def _download(self) -> None:
-        self.main._open_data_manager(prefill=(["Sm", "Xe"], []))
+        self.main._open_data_library(focus_category="Poisons")
         self._refresh_availability()
 
     # ---- run --------------------------------------------------------------

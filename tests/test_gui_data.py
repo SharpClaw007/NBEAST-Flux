@@ -1,4 +1,4 @@
-"""Data-manager dialog: token parsing + headless construction."""
+"""Data Library dialog: headless construction, categories, status + sizes."""
 
 import os
 
@@ -16,19 +16,32 @@ def qapp():
     yield app
 
 
-def test_split_tokens():
-    from nbeast.gui.data_manager import _split_tokens
+def test_data_library_categorizes_everything(qapp):
+    from nbeast.gui.data_library import DataLibraryDialog
 
-    elements, nuclides = _split_tokens("U O H Zr Pu239 B10")
-    assert elements == ["U", "O", "H", "Zr"]
-    assert nuclides == ["Pu239", "B10"]
+    dialog = DataLibraryDialog(active_xml=None, starter_xml=None)
+    cats = [dialog.tree.topLevelItem(i).text(0)
+            for i in range(dialog.tree.topLevelItemCount())]
+    assert {"Fuels", "Moderators & reflectors", "Coolants",
+            "Cladding & structural", "Absorbers"} <= set(cats)
+    assert any("Poisons" in c for c in cats) and "Depletion chains" in cats
+    # every-download button carries a size estimate
+    assert "GB" in dialog.everything_btn.text() or "MB" in dialog.everything_btn.text()
+    dialog.close()
 
 
-def test_dialog_constructs_and_presets(qapp):
-    from nbeast.gui.data_manager import DataManagerDialog
+def test_data_library_shows_status_and_sizes(qapp):
+    """With the bundled H/O/U/Zr library active, installed materials read 'installed'
+    and needs-data ones show which nuclides + an approximate size."""
+    from nbeast.gui.data_library import DataLibraryDialog
 
-    dialog = DataManagerDialog(active_xml="/tmp/example/cross_sections.xml")
-    assert dialog.elements_edit.text(), "default preset should populate elements"
-    dialog.preset_combo.setCurrentText("Actinides")
-    assert "Pu" in dialog.elements_edit.text()
+    xs = os.environ.get("OPENMC_CROSS_SECTIONS")
+    dialog = DataLibraryDialog(active_xml=xs, starter_xml=xs)
+    fuels = next(dialog.tree.topLevelItem(i) for i in range(dialog.tree.topLevelItemCount())
+                 if dialog.tree.topLevelItem(i).text(0) == "Fuels")
+    rows = {fuels.child(j).text(0): fuels.child(j) for j in range(fuels.childCount())}
+    if xs:  # only meaningful when the bundle is the active library
+        assert "installed" in rows["UO₂ fuel"].text(1)
+        mox = rows["MOX (U,Pu)O₂"]
+        assert "needs" in mox.text(1) and "MB" in mox.text(2)
     dialog.close()

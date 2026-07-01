@@ -110,6 +110,7 @@ class MainWindow(QMainWindow):
         self._total_batches = 0
         self._statepoint: str | None = None
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
+        self._starter_xml = self._cross_sections  # the bundled library ('reset' target)
         self.last_result = None
         self.last_diagnostics = None
 
@@ -152,8 +153,8 @@ class MainWindow(QMainWindow):
         raw_action.triggered.connect(self._on_export_raw)
         file_menu.addAction(raw_action)
 
-        data_action = QAction("Cross-section data…", self)
-        data_action.triggered.connect(lambda: self._open_data_manager())
+        data_action = QAction("Data library…", self)
+        data_action.triggered.connect(lambda: self._open_data_library())
         file_menu.addAction(data_action)
 
         # CAD geometry (DAGMC) is picked from the Template dropdown ("Custom CAD");
@@ -653,7 +654,7 @@ class MainWindow(QMainWindow):
         combo.setInsertPolicy(QComboBox.NoInsert)
         combo.setToolTip(
             "Type to filter. 'needs data' materials require extra cross sections — "
-            "selecting one offers the downloader (File ▸ Cross-section data…)."
+            "selecting one opens the Data Library (File ▸ Data library…)."
         )
         current = self._material_values[self._template][role.key]
         chosen = 0
@@ -690,10 +691,10 @@ class MainWindow(QMainWindow):
         resp = QMessageBox.question(
             self, "Material needs data",
             f"{mspec.label} needs cross-section data not in the active library:\n  {need}\n\n"
-            "Download just this material's data now?",
+            "Open the Data Library to download it?",
         )
         if resp == QMessageBox.Yes:
-            self._open_data_manager(prefill=(elements, sab))
+            self._open_data_library(focus_category=self._data_category_for(mspec))
 
     def _render_readonly(self, group: str) -> None:
         if group == "Settings":
@@ -766,7 +767,7 @@ class MainWindow(QMainWindow):
             names = ", ".join(m.label for _, m in missing)
             self.statusBar().showMessage(
                 f"Can't run — {names} need cross-section data. "
-                "Download it via File ▸ Cross-section data…"
+                "Download it via File ▸ Data library…"
             )
             return
         model = self._build_model()
@@ -1335,21 +1336,28 @@ class MainWindow(QMainWindow):
 
             DepletionDialog(self, parent=self).exec()
         else:
-            from .depletion_setup import DepletionSetupDialog
+            self.statusBar().showMessage("Depletion data isn't set up — opening the Data Library.")
+            self._open_data_library(focus_category="Depletion")
 
-            dialog = DepletionSetupDialog(parent=self)
-            dialog.configured.connect(
-                lambda: self.statusBar().showMessage("Depletion data configured — "
-                                                     "reopen Analysis ▸ Depletion / burnup.")
-            )
-            dialog.exec()
+    def _open_data_library(self, focus_category=None) -> None:
+        from .data_library import DataLibraryDialog
 
-    def _open_data_manager(self, prefill=None) -> None:
-        from .data_manager import DataManagerDialog
-
-        dialog = DataManagerDialog(active_xml=self._cross_sections, parent=self, prefill=prefill)
+        dialog = DataLibraryDialog(
+            active_xml=self._cross_sections, starter_xml=self._starter_xml,
+            parent=self, focus_category=focus_category,
+        )
         dialog.activated.connect(self.set_active_library)
         dialog.exec()
+
+    @staticmethod
+    def _data_category_for(mspec) -> str | None:
+        """Display category in the Data Library for a material (for scroll-to focus)."""
+        from .data_library import _MATERIAL_CATEGORIES
+
+        for label, keys in _MATERIAL_CATEGORIES:
+            if set(keys) & set(mspec.categories):
+                return label
+        return None
 
     def _open_cad_import(self) -> None:
         from .cad_import import CadImportDialog

@@ -81,14 +81,16 @@ def test_needs_data_material_blocks_run(qapp, tmp_path):
     win.close()
 
 
-def test_data_manager_prefills_one_material(qapp, tmp_path):
-    from nbeast.gui.data_manager import DataManagerDialog
+def test_data_library_category_for_material(qapp, tmp_path):
+    """A needs-data material opens the Data Library scrolled to its category."""
+    from nbeast.core import materials
+    from nbeast.gui.main_window import MainWindow
 
-    dialog = DataManagerDialog(active_xml=None, prefill=(["Fe", "Cr"], ["c_Graphite"]))
-    assert dialog.elements_edit.text() == "Fe Cr"
-    assert dialog.sab_edit.text() == "c_Graphite"
-    assert "this material" in dialog.status.text().lower()
-    dialog.close()
+    win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "p")
+    assert win._data_category_for(materials.LIBRARY["steel_304"]) == "Cladding & structural"
+    assert win._data_category_for(materials.LIBRARY["b4c"]) == "Absorbers"
+    assert win._data_category_for(materials.LIBRARY["uo2"]) == "Fuels"
+    win.close()
 
 
 def test_material_selection_persists_across_reopen(qapp, tmp_path):

@@ -13,6 +13,7 @@ retry-with-backoff around the flaky per-nuclide download host.
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import shutil
@@ -43,6 +44,56 @@ PRESETS: dict[str, dict] = {
 
 def default_data_dir() -> pathlib.Path:
     return pathlib.Path(os.path.expanduser("~/.nbeast/data"))
+
+
+# ---- download-size estimates -------------------------------------------------
+# A cached table of real ENDF/B-VIII.0 (+ ENDF/B-7.1 S(α,β)) file sizes, probed once
+# from the download host, so the library can show sizes instantly and offline.
+def _load_sizes() -> dict:
+    path = pathlib.Path(__file__).with_name("data_sizes.json")
+    try:
+        return json.loads(path.read_text())
+    except Exception:  # noqa: BLE001 — sizes are a nicety, never fatal
+        return {"elements": {}, "nuclides": {}, "sab": {}, "total": 0}
+
+
+_SIZES = _load_sizes()
+
+
+def element_size(element: str) -> int:
+    return int(_SIZES["elements"].get(element, 0))
+
+
+def nuclide_size(nuclide: str) -> int:
+    return int(_SIZES["nuclides"].get(nuclide, 0))
+
+
+def sab_size(name: str) -> int:
+    return int(_SIZES["sab"].get(name, 0))
+
+
+def everything_size() -> int:
+    return int(_SIZES.get("total", 0))
+
+
+def size_for(elements=(), nuclides=(), sab=()) -> int:
+    """Approximate download size (bytes) for a selection of elements/nuclides/S(α,β)."""
+    total = sum(element_size(e) for e in elements)
+    total += sum(nuclide_size(n) for n in nuclides)
+    total += sum(sab_size(s) for s in sab)
+    return total
+
+
+def format_size(n_bytes: int) -> str:
+    """Human size: ~0 shown as 'unknown', else KB/MB/GB."""
+    if not n_bytes:
+        return "size unknown"
+    mb = n_bytes / 1e6
+    if mb >= 1000:
+        return f"~{mb / 1000:.2f} GB"
+    if mb >= 1:
+        return f"~{mb:.0f} MB"
+    return f"~{n_bytes / 1e3:.0f} KB"
 
 
 def _dl(*args: str, retries: int = 5) -> None:
@@ -106,3 +157,59 @@ def download(
                 shutil.copy(h5, dest / h5.name)
 
     return build_index(dest)
+
+
+# ---- import from disk --------------------------------------------------------
+def import_files(paths, seed_xml=None, dest=None) -> pathlib.Path:
+    """Copy pre-built OpenMC ``.h5`` files into the library and reindex. If ``seed_xml``
+    is given the current library is copied in first (so imports add, never replace)."""
+    dest = pathlib.Path(dest or default_data_dir())
+    dest.mkdir(parents=True, exist_ok=True)
+    if seed_xml:
+        seed_from(seed_xml, dest)
+    copied = 0
+    for p in paths:
+        p = pathlib.Path(p)
+        if p.suffix == ".h5" and p.exists():
+            shutil.copy(p, dest / p.name)
+            copied += 1
+    if not copied:
+        raise RuntimeError("no .h5 files to import")
+    return build_index(dest)
+
+
+def import_library(source_xml, seed_xml=None, dest=None) -> pathlib.Path:
+    """Merge an external ``cross_sections.xml`` library (its .h5 files) into ours."""
+    dest = pathlib.Path(dest or default_data_dir())
+    dest.mkdir(parents=True, exist_ok=True)
+    if seed_xml:
+        seed_from(seed_xml, dest)
+    seed_from(source_xml, dest)
+    return build_index(dest)
+
+
+# ---- uninstall ---------------------------------------------------------------
+def remove_files(filenames, dest=None) -> pathlib.Path | None:
+    """Delete named .h5 files from the library dir and reindex (frees space). Operates
+    only on the user data dir — the bundled starter files are never touched."""
+    dest = pathlib.Path(dest or default_data_dir())
+    if not dest.exists():
+        return None
+    for name in filenames:
+        f = dest / name
+        if f.exists():
+            f.unlink()
+    return build_index(dest)
+
+
+def reset_to_starter(dest=None) -> None:
+    """Remove all downloaded/imported data, reverting to the bundled starter library."""
+    dest = pathlib.Path(dest or default_data_dir())
+    if dest.exists():
+        shutil.rmtree(dest)
+
+
+def installed_h5(dest=None) -> list[str]:
+    """Names of the .h5 files currently in the user data dir."""
+    dest = pathlib.Path(dest or default_data_dir())
+    return sorted(p.name for p in dest.glob("*.h5")) if dest.exists() else []
