@@ -80,6 +80,16 @@ nominal pin k∞. The steep positive slope is the (safe) negative void coefficie
 is built around. The dialog overlays reactivity and the source-driven multiplication
 M = 1/(1−k), which diverges at the critical crossing.
 
+### Fission-product poisoning (Xe-135 / Sm-149)
+
+With Xe-135/Sm-149 data added, the equilibrium worths on the pin cell are **Sm-149
+≈ −960 pcm** (reference −900 to −1300) and **Xe-135 ≈ −3230 pcm** at saturation
+(reference −2600 to −3000 for a typical core). Sm lands squarely in range; Xe is
+slightly high, honestly so — the estimate uses the *saturation* (maximum) xenon level
+in an *infinite* pin lattice, both of which raise the worth relative to a leaky
+operating core. Choosing a finite operating flux in the dialog brings Xe down toward
+the typical range. Poisoning needs a Xe-135/Sm-149 download (not in the bundle).
+
 ### Absolute-unit normalization
 
 Result maps are per source neutron by default (relative). Given a reactor power, they
@@ -109,6 +119,10 @@ thin visualization slice mesh instead of a global tally over-counts the source r
   a fission-power normalization (κ-fission over the whole model); it lands on the right
   order of magnitude (see above) but is not calibrated against an absolute flux standard.
   A pure shield (no fission) has no power basis, so its maps stay relative.
+- **Poisoning is a thermal-lattice, saturation estimate.** Xe-135/Sm-149 concentrations
+  come from the standard equilibrium chain constants (not a depletion solve), and the
+  worths validate against reference ranges (above). It needs a Xe-135/Sm-149 download
+  and is meaningless in a fast spectrum (correctly ~0 there).
 
 ## Reproducing
 
