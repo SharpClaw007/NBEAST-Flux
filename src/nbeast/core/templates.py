@@ -32,6 +32,18 @@ def _eigenvalue_settings(
     return s
 
 
+def scale_density(mat: openmc.Material, fraction: float | None) -> openmc.Material:
+    """Scale a material's density to ``fraction`` of nominal — the knob for void /
+    moderation studies (fraction 0 ≈ voided, 1 = nominal). Floored to a trace so the
+    cell stays runnable at zero moderation."""
+    if fraction is None:
+        return mat
+    units = mat.density_units if mat.density_units not in (None, "sum") else "g/cm3"
+    base = mat.density if mat.density else 1.0
+    mat.set_density(units, max(base * float(fraction), 1.0e-6))
+    return mat
+
+
 def _apply_temperature(settings: openmc.Settings, temperature: float | None) -> None:
     """Run every cell at ``temperature`` (K) — the knob for Doppler-feedback studies.
     Left at the data's default when None.
@@ -59,6 +71,7 @@ def pin_cell(
     fuel_radius: float = 0.39,
     clad_inner_radius: float = 0.40,
     clad_outer_radius: float = 0.46,
+    moderator_density: float | None = None,
     batches: int = 100,
     inactive: int = 20,
     particles: int = 2000,
@@ -67,10 +80,11 @@ def pin_cell(
 ) -> openmc.model.Model:
     """PWR-style pin cell with reflective boundaries (infinite lattice). Fuel, clad,
     and moderator are chosen by material-catalog key; ``enrichment`` applies only to
-    enrichment-parametric fuels."""
+    enrichment-parametric fuels. ``moderator_density`` (fraction of nominal) drives
+    void / moderation studies."""
     fuel = materials.build(fuel, enrichment=enrichment)
     clad = materials.build(clad)
-    mod = materials.build(moderator)
+    mod = scale_density(materials.build(moderator), moderator_density)
 
     fuel_or = openmc.ZCylinder(r=fuel_radius)
     clad_ir = openmc.ZCylinder(r=clad_inner_radius)
@@ -112,17 +126,19 @@ def assembly(
     fuel_radius: float = 0.39,
     clad_inner_radius: float = 0.40,
     clad_outer_radius: float = 0.46,
+    moderator_density: float | None = None,
     batches: int = 100,
     inactive: int = 20,
     particles: int = 5000,
     seed: int | None = None,
     temperature: float | None = None,
 ) -> openmc.model.Model:
-    """An N×N square lattice of identical pins (materials chosen by catalog key)."""
+    """An N×N square lattice of identical pins (materials chosen by catalog key).
+    ``moderator_density`` (fraction of nominal) drives void / moderation studies."""
     n_side = int(n_side)
     fuel = materials.build(fuel, enrichment=enrichment)
     clad = materials.build(clad)
-    mod = materials.build(moderator)
+    mod = scale_density(materials.build(moderator), moderator_density)
 
     fuel_or = openmc.ZCylinder(r=fuel_radius)
     clad_ir = openmc.ZCylinder(r=clad_inner_radius)

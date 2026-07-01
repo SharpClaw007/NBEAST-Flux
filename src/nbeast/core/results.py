@@ -171,14 +171,19 @@ class Results:
         not the thin visualization slice — a slice under-counts fissions badly."""
         if power_w <= 0.0:
             return None
-        try:
-            tally = self._sp.get_tally(name="power_norm")
-            energy_ev = float(tally.get_values(scores=["kappa-fission"]).sum())
-        except (LookupError, KeyError):
-            return None
-        if energy_ev <= 0.0:
+        energy_ev = self._kappa_fission_ev()
+        if energy_ev is None:
             return None
         return power_w / (energy_ev * self._EV_TO_J)
+
+    def _kappa_fission_ev(self):
+        """Whole-geometry recoverable fission energy per source neutron (eV), or None."""
+        try:
+            tally = self._sp.get_tally(name="power_norm")
+            energy = float(tally.get_values(scores=["kappa-fission"]).sum())
+        except (LookupError, KeyError):
+            return None
+        return energy if energy > 0.0 else None
 
     def cell_volume(self, name: str = "flux_mesh") -> float:
         mesh = self._sp.get_tally(name=name).find_filter(openmc.MeshFilter).mesh
@@ -187,13 +192,25 @@ class Results:
             vol *= (float(hi) - float(lo)) / int(n)
         return vol
 
-    def absolute_factor(self, score: str, power_w: float, name: str = "flux_mesh") -> float:
-        """Factor to turn a per-source tally value into an absolute SI rate."""
-        rate = self.source_rate(power_w)
-        if rate is None:
+    def absolute_factor(self, score: str, source_rate: float | None,
+                        name: str = "flux_mesh") -> float:
+        """Factor to turn a per-source tally value into an absolute SI rate, given the
+        absolute source rate [neutrons/s] (from a reactor power, or a fixed source's
+        strength). ``source_rate`` None/0 → no-op (maps stay relative)."""
+        if not source_rate or source_rate <= 0.0:
             return 1.0
         base = score[:-8] if score.endswith("_rel_err") else score
-        return (rate / self.cell_volume(name)) * self._ABS_CONST.get(base, 1.0)
+        return (source_rate / self.cell_volume(name)) * self._ABS_CONST.get(base, 1.0)
+
+    def fission_power(self, source_rate: float | None):
+        """Absolute fission power [W] for a source rate — the fixed-source *output*
+        (S × recoverable fission energy). None if there's no fission."""
+        if not source_rate or source_rate <= 0.0:
+            return None
+        energy_ev = self._kappa_fission_ev()
+        if energy_ev is None:
+            return None
+        return source_rate * energy_ev * self._EV_TO_J
 
     def flux_mesh_to_vtk(self, path: str | Path) -> Path:
         return self.field_to_vtk(path, "flux")

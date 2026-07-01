@@ -90,7 +90,8 @@ class MainWindow(QMainWindow):
         self._cad = {"step": None, "materials": []}
         self._cad_dialog = None   # the non-modal CAD import panel, when open
         self._unit_system = "SI"  # display units (SI / US-Imperial)
-        self._power_w = 0.0       # reactor power for absolute units; 0 = relative maps
+        self._power_w = 0.0       # reactor power (eigenvalue) for absolute units; 0 = relative
+        self._source_strength = 0.0  # source rate n/s (fixed source) for absolute units
         self._total_batches = 0
         self._statepoint: str | None = None
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
@@ -166,6 +167,14 @@ class MainWindow(QMainWindow):
         )
         sweep_action.triggered.connect(self._open_sweep)
         analysis_menu.addAction(sweep_action)
+
+        moderation_action = QAction("Moderation / reactivity curve…", self)
+        moderation_action.setToolTip(
+            "Sweep the moderator from voided to flooded — k-eff, reactivity, and the "
+            "source-driven power proxy across the whole moderation range."
+        )
+        moderation_action.triggered.connect(self._open_moderation)
+        analysis_menu.addAction(moderation_action)
 
         mgxs_action = QAction("Generate multigroup constants…", self)
         mgxs_action.setToolTip(
@@ -386,8 +395,18 @@ class MainWindow(QMainWindow):
 
     # ---- display units ----------------------------------------------------
     def _absolute_units(self) -> bool:
-        """Field maps are absolute (rate) units only when a reactor power is set."""
-        return self._power_w > 0
+        """Field maps are absolute only when a power (eigenvalue) or source strength
+        (fixed source) is set."""
+        return (self._source_strength > 0) if self._is_fixed_source else (self._power_w > 0)
+
+    def _source_rate(self, results) -> float | None:
+        """Absolute source rate [n/s]: a fixed source gives it directly; an eigenvalue
+        run derives it from the reactor power via the whole-geometry fission energy."""
+        if self._is_fixed_source:
+            return self._source_strength if self._source_strength > 0 else None
+        if self._power_w > 0:
+            return results.source_rate(self._power_w)
+        return None
 
     def _on_units_changed(self, index: int) -> None:
         self._unit_system = "US" if index == 1 else "SI"
@@ -408,21 +427,25 @@ class MainWindow(QMainWindow):
         return units.colorbar_title(score, self._unit_system, self._absolute_units())
 
     def _on_power_changed(self, value: float) -> None:
-        self._power_w = float(value)
+        if self._is_fixed_source:
+            self._source_strength = float(value)
+        else:
+            self._power_w = float(value)
         self._refresh_tree()
         if self.tabs.currentWidget() is self.flux_view and self._statepoint \
                 and self.results_list.isEnabled():
             current = self.results_list.currentItem()
             if current is not None:
                 self._on_results_clicked(current)
+        self._surface_diagnostics()   # refresh fission-power readout
 
     def _display_scale(self, results, score: str, tally_name: str) -> float:
-        """Combined power-normalization × unit-system factor for a field's values."""
+        """Combined power/source normalization × unit-system factor for a field."""
         from nbeast.core import units
 
         scale = units.field_factor(score, self._unit_system, self._absolute_units())
         if self._absolute_units():
-            scale *= results.absolute_factor(score, self._power_w, name=tally_name)
+            scale *= results.absolute_factor(score, self._source_rate(results), name=tally_name)
         return scale
 
     def _value_text(self, param: specs.Parameter) -> str:
@@ -455,8 +478,12 @@ class MainWindow(QMainWindow):
         inactive = 0 if self._is_fixed_source else _inactive_for(self.batches_spin.value())
         settings.addChild(QTreeWidgetItem([f"inactive = {inactive}"]))
         settings.addChild(QTreeWidgetItem([f"seed = {self.seed_spin.value()}"]))
-        power = f"{self._power_w:g} W" if self._power_w > 0 else "relative (per source n)"
-        settings.addChild(QTreeWidgetItem([f"reactor power = {power}"]))
+        if self._is_fixed_source:
+            val = f"{self._source_strength:g} n/s" if self._source_strength > 0 else "relative (per source n)"
+            settings.addChild(QTreeWidgetItem([f"source strength = {val}"]))
+        else:
+            val = f"{self._power_w:g} W" if self._power_w > 0 else "relative (per source n)"
+            settings.addChild(QTreeWidgetItem([f"reactor power = {val}"]))
         return settings
 
     def _refresh_tree(self) -> None:
@@ -554,22 +581,27 @@ class MainWindow(QMainWindow):
                                       100, 10_000_000, step=1000)
         spin(3, "Seed", self.seed_spin, 1, 2_147_483_647)
 
-        # Reactor power: 0 keeps result maps relative (per source neutron); a positive
-        # value normalizes flux/dose/heating to absolute units.
+        # Normalization: 0 keeps result maps relative (per source neutron); a positive
+        # value gives absolute units. Eigenvalue runs take a reactor power; fixed-source
+        # runs take a source strength (n/s), which fixes the scale directly.
         self.properties.setRowCount(5)
-        self.properties.setItem(4, 0, QTableWidgetItem("Reactor power (W)"))
-        power = QDoubleSpinBox()
-        power.setRange(0.0, 1e12)
-        power.setDecimals(1)
-        power.setSingleStep(1000.0)
-        power.setValue(self._power_w)
-        power.setSpecialValueText("relative (per source n)")
-        power.setToolTip(
+        fixed = self._is_fixed_source
+        label = "Source strength (n/s)" if fixed else "Reactor power (W)"
+        self.properties.setItem(4, 0, QTableWidgetItem(label))
+        norm = QDoubleSpinBox()
+        norm.setRange(0.0, 1e24)
+        norm.setDecimals(1)
+        norm.setSingleStep(1000.0)
+        norm.setValue(self._source_strength if fixed else self._power_w)
+        norm.setSpecialValueText("relative (per source n)")
+        norm.setToolTip(
+            "Neutron source rate (n/s) — sets absolute units and reports induced fission "
+            "power. 0 = relative maps." if fixed else
             "Fission power used to normalize result maps to absolute units "
             "(n/cm²·s, W/cm³, Sv/h). 0 = relative maps (per source neutron)."
         )
-        power.valueChanged.connect(self._on_power_changed)
-        self.properties.setCellWidget(4, 1, power)
+        norm.valueChanged.connect(self._on_power_changed)
+        self.properties.setCellWidget(4, 1, norm)
 
     def _on_quality_selected(self, name: str) -> None:
         self.quality_combo.setCurrentText(name)   # _apply_quality updates batches/particles
@@ -836,10 +868,24 @@ class MainWindow(QMainWindow):
         else:
             base = f"Done — k = {diag.keff:.5f} ± {diag.keff_std:.5f} ({diag.keff_pcm:.0f} pcm)"
             ok_text = "✓ converged"
-        if diag.warnings:
-            self.statusBar().showMessage(f"{base}  ⚠ {diag.warnings[0]}")
-        else:
-            self.statusBar().showMessage(f"{base}  {ok_text}")
+        tail = f"⚠ {diag.warnings[0]}" if diag.warnings else ok_text
+        self.statusBar().showMessage(f"{base}  {tail}{self._fission_power_note()}")
+
+    def _fission_power_note(self) -> str:
+        """For a fixed source with a strength set, report the induced fission power
+        (an output, not an input) — 0 for a non-fissile shield."""
+        if not (self._is_fixed_source and self._source_strength > 0 and self._statepoint):
+            return ""
+        try:
+            from nbeast.core.results import Results
+
+            with Results(self._statepoint) as results:
+                power = results.fission_power(self._source_strength)
+        except Exception:  # noqa: BLE001
+            return ""
+        if power:
+            return f"  ·  induced fission power ≈ {power:.3g} W"
+        return "  ·  non-multiplying (shield attenuates the source)"
 
     @staticmethod
     def _field_source(score: str) -> tuple[str, str, str]:
@@ -1135,6 +1181,18 @@ class MainWindow(QMainWindow):
 
         dialog = SweepDialog(self, parent=self)
         dialog.exec()
+
+    def _open_moderation(self) -> None:
+        if not self._analysis_needs_template():
+            return
+        if not any(r.key == "moderator" for r in self.spec.material_roles):
+            self.statusBar().showMessage(
+                "The moderation curve needs a template with a moderator (pin cell or assembly)."
+            )
+            return
+        from .moderation_dialog import ModerationDialog
+
+        ModerationDialog(self, parent=self).exec()
 
     def _open_mgxs(self) -> None:
         if not self._analysis_needs_template():

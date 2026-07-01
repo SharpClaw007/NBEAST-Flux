@@ -250,12 +250,14 @@ def test_power_normalization_gives_absolute_flux(tmp_path, monkeypatch):
     sp = m.run(output=False, cwd=str(tmp_path))
     with results.Results(sp) as r:
         assert r.source_rate(0.0) is None                    # 0 power -> relative
-        assert r.absolute_factor("flux", 0.0, "flux_mesh") == 1.0
+        assert r.absolute_factor("flux", None, "flux_mesh") == 1.0
         rate = r.source_rate(65_000.0)                        # ~one PWR pin
         assert rate is not None and rate > 0
         flux, _s, _r = r.field_values("flux", "flux_mesh")
-        peak = float(flux.max()) * r.absolute_factor("flux", 65_000.0, "flux_mesh")
+        peak = float(flux.max()) * r.absolute_factor("flux", rate, "flux_mesh")
         assert 1e12 < peak < 1e17                             # physical PWR-pin flux scale
+        # fixed-source style: a source rate normalizes directly; fission power is an output
+        assert r.fission_power(rate) is not None and r.fission_power(rate) > 0
 
 
 @requires_data
