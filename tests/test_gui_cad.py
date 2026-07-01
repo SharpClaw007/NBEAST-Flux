@@ -104,6 +104,21 @@ def test_setup_dialog_constructs(qapp):
     dialog.close()
 
 
+def test_material_legend_entries(qapp):
+    """The CAD legend collapses per-solid colours/labels into unique rows with counts."""
+    from nbeast.gui.viewport3d import FluxViewport
+
+    entries = FluxViewport._material_legend_entries(
+        ["#c9a227", "#7fb8d8", "#7fb8d8"], ["HEU", "Water", "Water"]
+    )
+    assert entries == [("HEU", "#c9a227"), ("Water (×2)", "#7fb8d8")]
+    assert FluxViewport._material_legend_entries(["#fff"], None) == []
+    # show_cad with labels is safe headless (falls back to placeholder, no crash)
+    view = FluxViewport()
+    view.show_cad(["a.stl", "b.stl"], ["#c9a227", "#7fb8d8"], labels=["HEU", "Water"])
+    view.close()
+
+
 def test_flux_map_array_headless(qapp):
     from nbeast.gui.viewport3d import FluxViewport
 

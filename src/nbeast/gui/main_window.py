@@ -1120,7 +1120,8 @@ class MainWindow(QMainWindow):
             self.tabs.setCurrentWidget(self.flux_view)
             self.flux_view.show_field_volume(
                 res["flux_volume"], res["vol_dims"], (b[0], b[1], b[2]), (b[3], b[4], b[5]),
-                stls=res.get("stls"), colors=res.get("colors"), title="CAD scalar flux",
+                stls=res.get("stls"), colors=res.get("colors"), labels=res.get("labels"),
+                title="CAD scalar flux",
             )
         elif not sp and res.get("flux_map") and res.get("map_bounds"):
             b = res["map_bounds"]
@@ -1129,12 +1130,12 @@ class MainWindow(QMainWindow):
                 res["flux_map"], (b[0], b[1]), (b[2], b[3]), title="CAD flux map"
             )
 
-    def _show_cad_preview(self, stls, colors) -> None:
+    def _show_cad_preview(self, stls, colors, labels=None) -> None:
         """Render imported CAD solids (coloured by material) in the 3D viewport."""
         # Make the viewport the visible tab BEFORE rendering, so its GL widget is
         # mapped when the VTK interactor is (lazily) created — else it can segfault.
         self.tabs.setCurrentWidget(self.flux_view)
-        self.flux_view.show_cad(stls, colors, title="CAD geometry")
+        self.flux_view.show_cad(stls, colors, title="CAD geometry", labels=labels)
 
     def _open_cad_setup(self) -> None:
         from .cad_setup import CadSetupDialog

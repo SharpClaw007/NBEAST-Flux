@@ -48,8 +48,8 @@ class _Worker(QObject):
 
 
 class CadImportDialog(QDialog):
-    completed = Signal(dict)        # {keff, keff_std, h5m}
-    preview = Signal(list, list)    # (stl_paths, colors) -> render in the 3D viewport
+    completed = Signal(dict)              # {keff, keff_std, h5m}
+    preview = Signal(list, list, list)    # (stl_paths, colors, labels) -> 3D viewport
 
     def __init__(self, cross_sections: str | None = None, parent=None):
         super().__init__(parent)
@@ -61,6 +61,7 @@ class CadImportDialog(QDialog):
         self._on_done_cb = None
         self._preview_stls = None
         self._preview_colors = None
+        self._preview_labels = None
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
@@ -221,10 +222,12 @@ class CadImportDialog(QDialog):
     def _on_preview(self, stls, tags) -> None:
         self._teardown()
         colors = [cad.MATERIAL_PRESETS[t]["color"] for t in tags]
+        labels = [cad.MATERIAL_PRESETS[t]["label"] for t in tags]
         self._preview_stls = list(stls)          # reused for the volume-render overlay
         self._preview_colors = colors
+        self._preview_labels = labels
         self._set_busy(False, f"Previewing {len(stls)} solid(s) — coloured by material.")
-        self.preview.emit(list(stls), colors)
+        self.preview.emit(list(stls), colors, labels)
 
     # ---- generate + run --------------------------------------------------
     def _run(self) -> None:
@@ -250,6 +253,7 @@ class CadImportDialog(QDialog):
         if self._preview_stls:  # overlay the geometry in the volume render
             res["stls"] = self._preview_stls
             res["colors"] = self._preview_colors
+            res["labels"] = getattr(self, "_preview_labels", None)
         self._set_busy(False, f"Done.  k-eff = {res['keff']:.4f} ± {res['keff_std']:.4f}")
         self.completed.emit(res)
 

@@ -55,8 +55,10 @@ class FluxViewport(QWidget):
         self._title = title
         self._render_tracks()
 
-    def show_cad(self, stl_paths, colors=None, title: str = "CAD geometry") -> None:
-        """Render imported CAD solids (per-solid STLs), coloured by material."""
+    def show_cad(self, stl_paths, colors=None, title: str = "CAD geometry",
+                 labels=None) -> None:
+        """Render imported CAD solids (per-solid STLs), coloured by material, with a
+        legend mapping each colour to its material (and how many solids use it)."""
         self._vtk_path = None
         self._tracks = None
         self._title = title
@@ -71,15 +73,42 @@ class FluxViewport(QWidget):
             for i, path in enumerate(stl_paths):
                 color = colors[i] if colors and i < len(colors) else None
                 interactor.add_mesh(pv.read(path), color=color, show_edges=True, opacity=0.6)
-            interactor.add_text(title, font_size=10, name="title")
+            self._add_material_legend(interactor, colors, labels)
+            interactor.add_text(title, font_size=10, name="title", position="lower_left")
             interactor.view_isometric()
             interactor.reset_camera()
         except Exception as exc:  # noqa: BLE001 — never let viz kill the app
             self._placeholder.show()
             self._placeholder.setText(f"3D view error: {exc}")
 
+    @staticmethod
+    def _material_legend_entries(colors, labels):
+        """Collapse per-solid (colour, label) into unique legend rows with counts:
+        [(text, colour), …] e.g. ('HEU (×2)', '#c9a227')."""
+        if not labels:
+            return []
+        from collections import OrderedDict
+
+        groups = OrderedDict()
+        for i, lab in enumerate(labels):
+            colour = colors[i] if colors and i < len(colors) else "white"
+            row = groups.setdefault(lab, [colour, 0])
+            row[1] += 1
+        return [(f"{lab} (×{n})" if n > 1 else lab, colour)
+                for lab, (colour, n) in groups.items()]
+
+    def _add_material_legend(self, interactor, colors, labels) -> None:
+        entries = self._material_legend_entries(colors, labels)
+        if not entries:
+            return
+        interactor.add_legend(
+            [[text, colour] for text, colour in entries],
+            bcolor="white", border=True, face="rectangle",
+            size=(0.28, 0.04 + 0.045 * len(entries)), loc="upper left",
+        )
+
     def show_field_volume(self, values, dims, lower_left, upper_right, *,
-                          log: bool = True, stls=None, colors=None,
+                          log: bool = True, stls=None, colors=None, labels=None,
                           title: str = "Scalar flux") -> None:
         """Publication-style 3D volume render of a field (log scale + colorbar +
         opacity transfer function), with optional semi-transparent geometry overlay.
@@ -130,13 +159,14 @@ class FluxViewport(QWidget):
                 for i, path in enumerate(stls):
                     color = colors[i] if colors and i < len(colors) else "lightgray"
                     interactor.add_mesh(pv.read(path), color=color, opacity=0.12, show_edges=False)
+                self._add_material_legend(interactor, colors, labels)
             interactor.add_volume(
                 grid, scalars="flux", cmap="inferno",
                 opacity=[0.0, 0.04, 0.12, 0.30, 0.60, 0.92],  # graded glow, low = transparent
                 clim=[lo, hi],
                 scalar_bar_args={"title": label},
             )
-            interactor.add_text(title, font_size=10, name="title")
+            interactor.add_text(title, font_size=10, name="title", position="lower_left")
             interactor.view_isometric()
             interactor.reset_camera()
         except Exception as exc:  # noqa: BLE001
