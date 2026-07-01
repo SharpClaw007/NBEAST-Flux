@@ -407,6 +407,24 @@ class MainWindow(QMainWindow):
 
         return units.colorbar_title(score, self._unit_system, self._absolute_units())
 
+    def _on_power_changed(self, value: float) -> None:
+        self._power_w = float(value)
+        self._refresh_tree()
+        if self.tabs.currentWidget() is self.flux_view and self._statepoint \
+                and self.results_list.isEnabled():
+            current = self.results_list.currentItem()
+            if current is not None:
+                self._on_results_clicked(current)
+
+    def _display_scale(self, results, score: str, tally_name: str) -> float:
+        """Combined power-normalization × unit-system factor for a field's values."""
+        from nbeast.core import units
+
+        scale = units.field_factor(score, self._unit_system, self._absolute_units())
+        if self._absolute_units():
+            scale *= results.absolute_factor(score, self._power_w, name=tally_name)
+        return scale
+
     def _value_text(self, param: specs.Parameter) -> str:
         from nbeast.core import units
 
@@ -437,6 +455,8 @@ class MainWindow(QMainWindow):
         inactive = 0 if self._is_fixed_source else _inactive_for(self.batches_spin.value())
         settings.addChild(QTreeWidgetItem([f"inactive = {inactive}"]))
         settings.addChild(QTreeWidgetItem([f"seed = {self.seed_spin.value()}"]))
+        power = f"{self._power_w:g} W" if self._power_w > 0 else "relative (per source n)"
+        settings.addChild(QTreeWidgetItem([f"reactor power = {power}"]))
         return settings
 
     def _refresh_tree(self) -> None:
@@ -533,6 +553,23 @@ class MainWindow(QMainWindow):
         self._particles_editor = spin(2, "Particles/batch", self.particles_spin,
                                       100, 10_000_000, step=1000)
         spin(3, "Seed", self.seed_spin, 1, 2_147_483_647)
+
+        # Reactor power: 0 keeps result maps relative (per source neutron); a positive
+        # value normalizes flux/dose/heating to absolute units.
+        self.properties.setRowCount(5)
+        self.properties.setItem(4, 0, QTableWidgetItem("Reactor power (W)"))
+        power = QDoubleSpinBox()
+        power.setRange(0.0, 1e12)
+        power.setDecimals(1)
+        power.setSingleStep(1000.0)
+        power.setValue(self._power_w)
+        power.setSpecialValueText("relative (per source n)")
+        power.setToolTip(
+            "Fission power used to normalize result maps to absolute units "
+            "(n/cm²·s, W/cm³, Sv/h). 0 = relative maps (per source neutron)."
+        )
+        power.valueChanged.connect(self._on_power_changed)
+        self.properties.setCellWidget(4, 1, power)
 
     def _on_quality_selected(self, name: str) -> None:
         self.quality_combo.setCurrentText(name)   # _apply_quality updates batches/particles
@@ -675,6 +712,7 @@ class MainWindow(QMainWindow):
             seed=self.seed_spin.value(),
         )
         tallies.add_flux_spectrum(model, n_groups=100)
+        tallies.add_power_norm(model)              # whole-geometry basis for absolute units
         tallies.add_flux_slice_mesh(model, n=40)   # flux + reaction-rate + heating maps
         tallies.add_flux_volume_mesh(model, n=30)
         tallies.add_dose_mesh(model, n=40)         # flux-to-dose-rate (shielding)
@@ -829,7 +867,9 @@ class MainWindow(QMainWindow):
         try:
             vtk = Path(self._statepoint).parent / f"{label}.vtk"
             with Results(self._statepoint) as results:
-                results.field_to_vtk(vtk, score=tally_score, name=tally_name, label=label)
+                scale = self._display_scale(results, score, tally_name)
+                results.field_to_vtk(vtk, score=tally_score, name=tally_name, label=label,
+                                     scale=scale)
             self.flux_view.show_field(vtk, score, FIELD_TITLES.get(score, score),
                                       bar_title=self._field_bar_title(score))
             if switch_tab:
@@ -855,6 +895,10 @@ class MainWindow(QMainWindow):
         try:
             with Results(self._statepoint) as results:
                 values, dims, lower, upper = results.flux_volume()
+                scale = self._display_scale(results, "flux", "flux_volume")
+            if scale != 1.0:
+                import numpy as np
+                values = np.asarray(values, dtype=float) * scale
             self.flux_view.show_field_volume(values, dims, lower, upper, title="Scalar flux",
                                              bar_title=self._field_bar_title("flux"))
             self.tabs.setCurrentWidget(self.flux_view)

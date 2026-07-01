@@ -59,6 +59,10 @@ def main() -> None:
     flux_mesh.filters = [openmc.MeshFilter(mesh)]
     flux_mesh.scores = ["flux", "fission", "absorption", "nu-fission", "heating"]
 
+    # Whole-geometry recoverable fission energy — basis for absolute-unit normalization.
+    power_norm = openmc.Tally(name="power_norm")
+    power_norm.scores = ["kappa-fission"]
+
     # flux-to-dose-rate map (ICRP coefficients).
     dose_mesh = openmc.Tally(name="dose_mesh")
     energies_dose, coeffs_dose = openmc.data.dose_coefficients("neutron", "AP")
@@ -75,7 +79,7 @@ def main() -> None:
     flux_volume.filters = [openmc.MeshFilter(vmesh)]
     flux_volume.scores = ["flux"]
 
-    tallies = openmc.Tallies([spectrum, flux_mesh, dose_mesh, flux_volume])
+    tallies = openmc.Tallies([spectrum, flux_mesh, power_norm, dose_mesh, flux_volume])
 
     rundir = os.path.join(os.path.expanduser("~"), ".nbeast", "cad_run")
     os.makedirs(rundir, exist_ok=True)

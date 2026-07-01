@@ -134,20 +134,66 @@ class Results:
 
     def field_to_vtk(
         self, path: str | Path, score: str = "flux",
-        name: str = "flux_mesh", label: str | None = None,
+        name: str = "flux_mesh", label: str | None = None, scale: float = 1.0,
     ) -> Path:
         """Write a mesh-tally score **and its relative error** to a VTK file (correct
         cell ordering) and return the path. The viewport selects either array by name
         (``<label>`` or ``<label>_rel_err``). ``name`` picks the tally (e.g.
         ``dose_mesh``); ``label`` overrides the array name (e.g. read ``flux`` from
-        the dose tally but store it as ``dose``)."""
+        the dose tally but store it as ``dose``). ``scale`` multiplies the mean (used
+        for power/unit normalization; the relative error is unaffected)."""
         tally = self._sp.get_tally(name=name)
         mesh = tally.find_filter(openmc.MeshFilter).mesh
         mean, _std, rel = self.field_values(score, name)
+        if scale != 1.0:
+            mean = mean * scale
         label = label or score
         path = Path(path)
         mesh.write_data_to_vtk(str(path), {label: mean, f"{label}_rel_err": rel})
         return path
+
+    # ---- absolute (power-normalized) units -------------------------------
+    # Field maps are per source neutron; multiplying by the source rate (and mesh
+    # cell volume) converts them to absolute rates. The source rate follows from the
+    # requested fission power and the total fission rate. Requires a fissile system;
+    # returns a no-op factor (1.0) otherwise, keeping the maps honestly relative.
+    _EV_TO_J = 1.602176634e-19
+    _ABS_CONST = {
+        "flux": 1.0, "fission": 1.0, "absorption": 1.0, "nu-fission": 1.0,
+        "heating": _EV_TO_J,                       # eV·cm⁻³·s⁻¹ → W·cm⁻³
+        "dose": 3600.0 * 1e-12,                    # pSv·s⁻¹ → Sv·h⁻¹
+    }
+
+    def source_rate(self, power_w: float):
+        """Source neutrons/s that produce ``power_w`` of fission power (None if the
+        system has no fission, or the run lacks the whole-geometry ``power_norm``
+        tally). Uses recoverable fission energy (kappa-fission) over the WHOLE model,
+        not the thin visualization slice — a slice under-counts fissions badly."""
+        if power_w <= 0.0:
+            return None
+        try:
+            tally = self._sp.get_tally(name="power_norm")
+            energy_ev = float(tally.get_values(scores=["kappa-fission"]).sum())
+        except (LookupError, KeyError):
+            return None
+        if energy_ev <= 0.0:
+            return None
+        return power_w / (energy_ev * self._EV_TO_J)
+
+    def cell_volume(self, name: str = "flux_mesh") -> float:
+        mesh = self._sp.get_tally(name=name).find_filter(openmc.MeshFilter).mesh
+        vol = 1.0
+        for lo, hi, n in zip(mesh.lower_left, mesh.upper_right, mesh.dimension):
+            vol *= (float(hi) - float(lo)) / int(n)
+        return vol
+
+    def absolute_factor(self, score: str, power_w: float, name: str = "flux_mesh") -> float:
+        """Factor to turn a per-source tally value into an absolute SI rate."""
+        rate = self.source_rate(power_w)
+        if rate is None:
+            return 1.0
+        base = score[:-8] if score.endswith("_rel_err") else score
+        return (rate / self.cell_volume(name)) * self._ABS_CONST.get(base, 1.0)
 
     def flux_mesh_to_vtk(self, path: str | Path) -> Path:
         return self.field_to_vtk(path, "flux")

@@ -238,6 +238,27 @@ def test_heating_field_finite_and_vtk_clean(tmp_path, monkeypatch):
 
 
 @requires_data
+def test_power_normalization_gives_absolute_flux(tmp_path, monkeypatch):
+    """A reactor power turns per-source maps into absolute rates; 0 stays relative.
+    The peak pin flux must land on a physical PWR scale."""
+    from nbeast.core import results, tallies, templates
+
+    monkeypatch.chdir(tmp_path)
+    m = templates.pin_cell(batches=40, inactive=10, particles=2000, seed=1)
+    tallies.add_power_norm(m)
+    tallies.add_flux_slice_mesh(m, n=20)
+    sp = m.run(output=False, cwd=str(tmp_path))
+    with results.Results(sp) as r:
+        assert r.source_rate(0.0) is None                    # 0 power -> relative
+        assert r.absolute_factor("flux", 0.0, "flux_mesh") == 1.0
+        rate = r.source_rate(65_000.0)                        # ~one PWR pin
+        assert rate is not None and rate > 0
+        flux, _s, _r = r.field_values("flux", "flux_mesh")
+        peak = float(flux.max()) * r.absolute_factor("flux", 65_000.0, "flux_mesh")
+        assert 1e12 < peak < 1e17                             # physical PWR-pin flux scale
+
+
+@requires_data
 def test_mgxs_generation(tmp_path, monkeypatch):
     from nbeast.core import mgxs_gen, templates
 

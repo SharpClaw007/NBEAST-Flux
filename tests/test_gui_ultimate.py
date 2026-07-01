@@ -70,7 +70,7 @@ def test_settings_editors_extremes(qapp, tmp_path):
                     for i in range(win.model_tree.topLevelItemCount())
                     if win.model_tree.topLevelItem(i).text(0) == "Settings")
     win._on_tree_click(settings, 0)
-    assert win.properties.rowCount() == 4
+    assert win.properties.rowCount() == 5  # quality, batches, particles, seed, power
     # push editors past their bounds — spin boxes must clamp, not crash
     win._batches_editor.setValue(10 ** 9)
     assert win.batches_spin.value() == win.batches_spin.maximum()
@@ -140,7 +140,7 @@ def test_cad_template_guards(qapp, tmp_path):
                     for i in range(win.model_tree.topLevelItemCount())
                     if win.model_tree.topLevelItem(i).text(0) == "Settings")
     win._on_tree_click(settings, 0)
-    assert win.properties.rowCount() == 4
+    assert win.properties.rowCount() == 5  # quality, batches, particles, seed, power
     win.close()
 
 

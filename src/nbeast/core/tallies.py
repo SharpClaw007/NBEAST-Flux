@@ -32,6 +32,18 @@ def add_flux_spectrum(model: openmc.model.Model, n_groups: int = 100) -> openmc.
     return tally
 
 
+def add_power_norm(model: openmc.model.Model) -> openmc.Tally:
+    """Whole-geometry recoverable fission energy per source neutron (name:
+    'power_norm', score 'kappa-fission', eV). Dividing a requested power by this
+    (×1.602e-19 J/eV) gives the absolute source rate — the basis for turning the
+    per-source result maps into absolute units. Unfiltered so it captures ALL
+    fission, unlike the thin visualization slice mesh."""
+    tally = openmc.Tally(name="power_norm")
+    tally.scores = ["kappa-fission"]
+    _append(model, tally)
+    return tally
+
+
 def add_flux_mesh(
     model: openmc.model.Model,
     dimension: tuple[int, int, int],

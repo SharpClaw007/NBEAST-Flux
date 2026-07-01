@@ -65,7 +65,7 @@ def test_settings_editable_in_model_tree(qapp, tmp_path):
         if win.model_tree.topLevelItem(i).text(0) == "Settings"
     )
     win._on_tree_click(settings, 0)
-    assert win.properties.rowCount() == 4  # quality, batches, particles, seed
+    assert win.properties.rowCount() == 5  # quality, batches, particles, seed, power
     win._batches_editor.setValue(321)
     assert win.batches_spin.value() == 321
     win.close()

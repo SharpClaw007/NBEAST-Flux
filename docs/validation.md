@@ -71,6 +71,19 @@ Two-group (CASMO-2) constants collapsed from the pin cell are physically correct
 fission spectrum χ is entirely in the fast group (1.000 / 0.000), and both absorption
 and ν-fission are far larger in the thermal group, as expected for low-enriched UO₂.
 
+### Absolute-unit normalization
+
+Result maps are per source neutron by default (relative). Given a reactor power, they
+are scaled to absolute rates using the **whole-geometry recoverable fission energy**
+(a `kappa-fission` tally): source rate = *P* / (Σ κ-fission · 1.602×10⁻¹⁹ J/eV), then
+flux = (track-length / cell volume) × source rate. For the pin cell at a single-pin
+power of **65 kW**, the peak scalar flux is **≈7×10¹⁴ n·cm⁻²·s⁻¹** — the expected PWR
+scale (≈10¹⁴). The independent heating map integrates to ~the input power (κ-fission and
+the heating score agree to ~200 MeV/fission), an internal consistency check. Using the
+thin visualization slice mesh instead of a global tally over-counts the source rate by
+~300× (the slice captures only a fraction of the fissions), which is why the global
+`power_norm` tally is required.
+
 ## Scope and honest limits
 
 - **Criticality and flux physics are validated** and rest on a published benchmark and
@@ -83,6 +96,10 @@ and ν-fission are far larger in the thermal group, as expected for low-enriched
   feature.
 - **Dose and heating maps are validated for shape and trend** (correct attenuation /
   relative behaviour), not absolute calibration against a reference dose problem.
+- **Absolute units require a reactor power and a fissile system.** The normalization is
+  a fission-power normalization (κ-fission over the whole model); it lands on the right
+  order of magnitude (see above) but is not calibrated against an absolute flux standard.
+  A pure shield (no fission) has no power basis, so its maps stay relative.
 
 ## Reproducing
 
