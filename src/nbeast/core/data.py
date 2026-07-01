@@ -213,3 +213,72 @@ def installed_h5(dest=None) -> list[str]:
     """Names of the .h5 files currently in the user data dir."""
     dest = pathlib.Path(dest or default_data_dir())
     return sorted(p.name for p in dest.glob("*.h5")) if dest.exists() else []
+
+
+# ---- per-element uninstall ---------------------------------------------------
+def element_of(name: str) -> str | None:
+    """Element symbol for a nuclide name ('U235' → 'U'); None for S(α,β) ('c_…')."""
+    if name.startswith("c_"):
+        return None
+    import re
+
+    match = re.match(r"^([A-Za-z]+)", name)
+    return match.group(1) if match else None
+
+
+def _names_in(xml) -> set[str]:
+    from . import materials
+
+    return materials.available_names(str(xml)) if xml else set()
+
+
+def _nuclide_paths(xml) -> dict[str, pathlib.Path]:
+    """{data name → absolute .h5 path} from a cross_sections.xml."""
+    import xml.etree.ElementTree as ET
+
+    xml = pathlib.Path(xml)
+    base = xml.parent
+    out: dict[str, pathlib.Path] = {}
+    try:
+        root = ET.parse(xml).getroot()
+    except Exception:  # noqa: BLE001
+        return out
+    for lib in root.findall("library"):
+        name, path = lib.get("materials"), lib.get("path")
+        if name and path:
+            p = pathlib.Path(path)
+            out[name] = p if p.is_absolute() else (base / p)
+    return out
+
+
+def downloaded_elements(active_xml, starter_xml) -> list[str]:
+    """Elements present in the active library but not the bundled starter — i.e. the
+    ones the user downloaded, and so can delete to reclaim space."""
+    added = _names_in(active_xml) - _names_in(starter_xml)
+    return sorted({e for e in (element_of(n) for n in added) if e})
+
+
+def downloaded_sab(active_xml, starter_xml) -> list[str]:
+    """Thermal-scattering S(α,β) tables the user downloaded (deletable)."""
+    added = _names_in(active_xml) - _names_in(starter_xml)
+    return sorted(n for n in added if n.startswith("c_"))
+
+
+def remove_items(elements=(), sab=(), active_xml=None, dest=None) -> pathlib.Path | None:
+    """Delete the .h5 files for whole elements and/or S(α,β) tables — but only files
+    that live in the user library (the bundled starter is never touched) — then reindex.
+    Returns the rebuilt xml, or None if nothing was removed."""
+    dest = pathlib.Path(dest or default_data_dir())
+    elements, sab = set(elements), set(sab)
+    removed = 0
+    for name, path in _nuclide_paths(active_xml).items():
+        path = pathlib.Path(path)
+        if path.parent != dest:      # outside the user dir → bundled/starter, leave it
+            continue
+        if name in sab or element_of(name) in elements:
+            try:
+                path.unlink()
+                removed += 1
+            except FileNotFoundError:
+                pass
+    return build_index(dest) if removed else None

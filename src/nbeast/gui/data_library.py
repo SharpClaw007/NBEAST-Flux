@@ -115,6 +115,7 @@ class DataLibraryDialog(QDialog):
         available = materials.available_names(self._active_xml)
         shown: set[str] = set()
         focus_item = None
+        self._add_downloaded_category()   # per-element uninstall, if anything's downloaded
         for label, keys in _MATERIAL_CATEGORIES:
             mspecs = []
             for key in keys:
@@ -172,6 +173,29 @@ class DataLibraryDialog(QDialog):
                              lambda e=list(miss_el), s=list(miss_sab): self._download(elements=e, sab=s))
         return cat
 
+    def _add_downloaded_category(self) -> QTreeWidgetItem | None:
+        elements = data.downloaded_elements(self._active_xml, self._starter_xml)
+        sabs = data.downloaded_sab(self._active_xml, self._starter_xml)
+        if not elements and not sabs:
+            return None
+        cat = self._cat_item("Installed downloads — delete to free space")
+        total = 0
+        for element in elements:
+            size = data.element_size(element)
+            total += size
+            row = QTreeWidgetItem([f"{element} (element)", "✅ downloaded", data.format_size(size)])
+            cat.addChild(row)
+            self._row_button(row, "Delete", lambda e=element: self._delete(elements=[e]))
+        for name in sabs:
+            size = data.sab_size(name)
+            total += size
+            row = QTreeWidgetItem([name, "✅ downloaded", data.format_size(size)])
+            cat.addChild(row)
+            self._row_button(row, "Delete", lambda s=name: self._delete(sab=[s]))
+        cat.setText(1, f"{len(elements) + len(sabs)} downloaded")
+        cat.setText(2, data.format_size(total))
+        return cat
+
     def _add_poison_category(self, available) -> QTreeWidgetItem:
         from nbeast.core import poisons
 
@@ -221,6 +245,24 @@ class DataLibraryDialog(QDialog):
 
         size = data.format_size(data.size_for(els, nucs, sabs))
         self._run(fn, f"Downloading {size}… (this can take a while)")
+
+    def _delete(self, elements=(), sab=()) -> None:
+        names = ", ".join([*elements, *sab])
+        if QMessageBox.question(
+            self, "Delete data",
+            f"Remove {names} from your library to free space? Materials that need it "
+            "will show 'needs data' again (you can re-download any time).",
+        ) != QMessageBox.Yes:
+            return
+        active = self._active_xml
+        dest = str(self._user_dir)
+        els, sabs = list(elements), list(sab)
+
+        def fn():
+            xml = data.remove_items(elements=els, sab=sabs, active_xml=active, dest=dest)
+            return str(xml) if xml else (active or "")
+
+        self._run(fn, f"Removing {names}…")
 
     def _download_everything(self) -> None:
         size = data.format_size(data.everything_size())

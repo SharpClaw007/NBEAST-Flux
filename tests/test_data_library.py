@@ -16,6 +16,39 @@ def test_size_table_and_aggregation():
     assert data.format_size(30_000_000).endswith("MB")
 
 
+def test_downloaded_detection_and_per_element_delete(tmp_path):
+    """Elements present in the active library but not the starter are 'downloaded' and
+    deletable; deleting removes only that element's files from the user dir."""
+    import shutil
+
+    xs = os.environ.get("OPENMC_CROSS_SECTIONS")
+    if not xs:
+        return
+    h5s = {os.path.basename(p): p for p in glob.glob(os.path.join(os.path.dirname(xs), "*.h5"))}
+    h1 = next((p for n, p in h5s.items() if n.startswith("H1")), None)
+    zr = next((p for n, p in h5s.items() if n.startswith("Zr90")), None)
+    if not (h1 and zr):
+        return
+
+    starter = tmp_path / "starter"
+    starter.mkdir()
+    shutil.copy(h1, starter / os.path.basename(h1))
+    starter_xml = str(data.build_index(str(starter)))
+
+    user = tmp_path / "user"          # active library = starter + a 'downloaded' Zr
+    user.mkdir()
+    shutil.copy(h1, user / os.path.basename(h1))
+    shutil.copy(zr, user / os.path.basename(zr))
+    active_xml = str(data.build_index(str(user)))
+
+    assert data.downloaded_elements(active_xml, starter_xml) == ["Zr"]
+    new_xml = data.remove_items(elements=["Zr"], active_xml=active_xml, dest=str(user))
+    assert new_xml is not None
+    assert not (user / os.path.basename(zr)).exists()      # Zr file gone
+    assert (user / os.path.basename(h1)).exists()          # starter H untouched
+    assert data.downloaded_elements(str(new_xml), starter_xml) == []
+
+
 def test_import_files_and_reset(tmp_path):
     xs = os.environ.get("OPENMC_CROSS_SECTIONS")
     if not xs:
