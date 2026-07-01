@@ -381,7 +381,9 @@ class MainWindow(QMainWindow):
         settings.addChild(QTreeWidgetItem([f"quality = {self.quality_combo.currentText()}"]))
         settings.addChild(QTreeWidgetItem([f"batches = {self.batches_spin.value()}"]))
         settings.addChild(QTreeWidgetItem([f"particles/batch = {self.particles_spin.value()}"]))
-        settings.addChild(QTreeWidgetItem([f"inactive = {_inactive_for(self.batches_spin.value())}"]))
+        # Fixed-source runs have no inactive (source-convergence) batches.
+        inactive = 0 if self._is_fixed_source else _inactive_for(self.batches_spin.value())
+        settings.addChild(QTreeWidgetItem([f"inactive = {inactive}"]))
         settings.addChild(QTreeWidgetItem([f"seed = {self.seed_spin.value()}"]))
         return settings
 
@@ -716,6 +718,15 @@ class MainWindow(QMainWindow):
                 f"{self.statusBar().currentMessage()}  (spectrum unavailable: {exc})"
             )
         self._surface_diagnostics()
+        # Fixed-source runs have no k-effective / fission-source convergence — say so
+        # rather than leaving an empty criticality plot with a misleading caption.
+        if self.last_diagnostics is not None and self.last_diagnostics.keff is None:
+            self.monitor.set_note(
+                "Fixed-source run — k-effective and fission-source convergence do not "
+                "apply (there is no chain reaction to converge)."
+            )
+        else:
+            self.monitor.clear_note()
         self.results_list.setEnabled(True)
         self.results_list.setCurrentRow(0)
         self._show_field("flux", switch_tab=False)
@@ -1052,6 +1063,10 @@ class MainWindow(QMainWindow):
         from .cad_import import CadImportDialog
 
         dialog = CadImportDialog(cross_sections=self._cross_sections, parent=self)
+        # Seed the dialog's run quality from the model tree's Settings, so those
+        # settings aren't decorative for the CAD template.
+        dialog.batches.setValue(self.batches_spin.value())
+        dialog.particles.setValue(self.particles_spin.value())
         dialog.completed.connect(self._on_cad_completed)
         dialog.preview.connect(self._show_cad_preview)
         dialog.exec()

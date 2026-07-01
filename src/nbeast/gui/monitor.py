@@ -30,6 +30,13 @@ class ConvergenceMonitor(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        # Shown instead-of-nothing when convergence doesn't apply (fixed source).
+        self._note = QLabel("")
+        self._note.setWordWrap(True)
+        self._note.setStyleSheet("color: #b26a00; padding: 6px; font-weight: bold;")
+        self._note.hide()
+        layout.addWidget(self._note)
+
         self._k_plot = pg.PlotWidget()
         self._k_plot.setBackground("w")
         self._k_plot.setTitle("k-effective convergence")
@@ -70,7 +77,16 @@ class ConvergenceMonitor(QWidget):
     def has_entropy(self) -> bool:
         return bool(self._entropy)
 
+    def set_note(self, text: str) -> None:
+        """Show a plain-language note (e.g. 'not applicable for fixed source')."""
+        self._note.setText(text)
+        self._note.setVisible(bool(text))
+
+    def clear_note(self) -> None:
+        self._note.hide()
+
     def reset(self) -> None:
+        self.clear_note()
         self._batches.clear()
         self._k_batches.clear()
         self._keffs.clear()

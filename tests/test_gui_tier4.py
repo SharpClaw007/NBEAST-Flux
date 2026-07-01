@@ -47,6 +47,37 @@ def test_monitor_handles_missing_keff(qapp):
     mon.close()
 
 
+def test_monitor_note_toggles(qapp):
+    from nbeast.gui.monitor import ConvergenceMonitor
+
+    mon = ConvergenceMonitor()
+    assert mon._note.isHidden()
+    mon.set_note("not applicable")
+    assert not mon._note.isHidden() and mon._note.text() == "not applicable"
+    mon.reset()
+    assert mon._note.isHidden()
+    mon.close()
+
+
+def test_fixed_source_settings_show_zero_inactive(qapp, tmp_path):
+    """Fixed-source runs use 0 inactive batches — the tree must not claim otherwise."""
+    from nbeast.gui.main_window import MainWindow
+
+    win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "p")
+
+    def inactive_row(template):
+        win.set_template(template)
+        tree = win.model_tree
+        settings = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+                        if tree.topLevelItem(i).text(0) == "Settings")
+        return next(settings.child(i).text(0) for i in range(settings.childCount())
+                    if settings.child(i).text(0).startswith("inactive"))
+
+    assert inactive_row("Shield slab") == "inactive = 0"
+    assert inactive_row("Pin cell") != "inactive = 0"
+    win.close()
+
+
 def test_results_picker_has_richer_fields(qapp, tmp_path):
     from PySide6.QtCore import Qt
 
