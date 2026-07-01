@@ -61,6 +61,26 @@ def test_dialog_embeds_live_colour_coded_preview(qapp):
     dialog.close()
 
 
+def test_viewport_finalize_is_idempotent(qapp):
+    """finalize() releases the VTK interactor and is safe to call repeatedly / early —
+    the dialog uses it on close to avoid a segfault when the embedded view is destroyed."""
+    from nbeast.gui.viewport3d import FluxViewport
+
+    view = FluxViewport()
+    view.finalize()          # no interactor yet — must not raise
+    view.finalize()
+    assert view._interactor is None
+    view.close()
+
+
+def test_cad_dialog_close_is_clean(qapp):
+    from nbeast.gui.cad_import import CadImportDialog
+
+    dialog = CadImportDialog(cross_sections=None)
+    dialog._on_inspected(2)
+    dialog.close()           # closeEvent -> teardown + preview finalize, no crash
+
+
 def test_autoinspect_no_manual_inspect_button(qapp):
     """Importing a CAD file should go straight to material selection — the manual
     Inspect button is hidden and inspection auto-triggers."""

@@ -297,4 +297,12 @@ class CadImportDialog(QDialog):
     @Slot(str)
     def _on_failed(self, message: str) -> None:
         self._teardown()
-        self._set_busy(False, f"Failed: {message}")
+        # Show the last meaningful line (the actual error), not the whole traceback dump.
+        lines = [ln for ln in message.strip().splitlines() if ln.strip()]
+        concise = lines[-1] if lines else "unknown error"
+        self._set_busy(False, f"Failed: {concise[:400]}")
+
+    def closeEvent(self, event) -> None:
+        self._teardown()             # stop any worker thread before we're destroyed
+        self.preview3d.finalize()    # release the embedded VTK interactor (else segfault)
+        super().closeEvent(event)

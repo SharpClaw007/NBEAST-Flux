@@ -224,10 +224,16 @@ def run_model(h5m_path, materials, batches: int = 50, inactive: int = 10,
     try:
         return _run_json(dagmc_python(), _RUN, payload)
     except RuntimeError as exc:
-        if "lost particle" in str(exc).lower():
+        msg = str(exc).lower()
+        if "lost particle" in msg:
             raise RuntimeError(
                 "DAGMC lost particles — the geometry isn't watertight for transport. "
                 "Usually the mesh is too coarse for the geometry (use a smaller max/min "
                 "mesh size) or solids overlap / leave gaps. Try re-meshing finer."
+            ) from exc
+        if "too few source sites" in msg or "source rejection" in msg:
+            raise RuntimeError(
+                "No fissionable material found — a k-effective run needs a fissile fuel. "
+                "Assign a fuel (e.g. UO₂ or HEU) to at least one solid."
             ) from exc
         raise

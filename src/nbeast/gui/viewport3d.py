@@ -222,6 +222,21 @@ class FluxViewport(QWidget):
             self._placeholder.hide()
         return self._interactor
 
+    def finalize(self) -> None:
+        """Release the VTK interactor's GL/render-window resources. Call before this
+        widget is destroyed (e.g. a dialog closing) — otherwise pyvistaqt's interactor
+        can segfault on teardown. Idempotent."""
+        if self._interactor is not None:
+            try:
+                self._interactor.close()   # BasePlotter.close finalizes the render window
+            except Exception:  # noqa: BLE001 — teardown must never raise
+                pass
+            self._interactor = None
+
+    def closeEvent(self, event) -> None:
+        self.finalize()
+        super().closeEvent(event)
+
     def _render_tracks(self) -> None:
         if not self._tracks:
             return

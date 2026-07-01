@@ -35,7 +35,13 @@ def main() -> None:
     settings.batches = job["batches"]
     settings.inactive = job["inactive"]
     settings.particles = job["particles"]
-    settings.source = openmc.IndependentSource(space=openmc.stats.Point((0.0, 0.0, 0.0)))
+    # Sample the initial fission source across the whole geometry bounding box and keep
+    # only fissionable sites — a point at the origin fails when the geometry is offset
+    # from (0,0,0), as CAD parts usually are.
+    settings.source = openmc.IndependentSource(
+        space=openmc.stats.Box(list(bbox.lower_left), list(bbox.upper_right)),
+        constraints={"fissionable": True},
+    )
 
     import numpy as np
 
