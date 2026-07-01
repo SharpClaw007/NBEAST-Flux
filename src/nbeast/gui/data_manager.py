@@ -56,7 +56,7 @@ class _DownloadWorker(QObject):
 class DataManagerDialog(QDialog):
     activated = Signal(str)  # emitted with the new cross_sections.xml path
 
-    def __init__(self, active_xml: str | None = None, parent=None):
+    def __init__(self, active_xml: str | None = None, parent=None, prefill=None):
         super().__init__(parent)
         self.setWindowTitle("Cross-section data")
         self.resize(560, 320)
@@ -64,6 +64,7 @@ class DataManagerDialog(QDialog):
         self._user_dir = data.default_data_dir()
         self._thread = None
         self._worker = None
+        self._prefill = prefill  # optional (elements, sab) for a targeted per-material fetch
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
@@ -106,6 +107,19 @@ class DataManagerDialog(QDialog):
         layout.addLayout(buttons)
 
         self._apply_preset(self.preset_combo.currentText())
+        if self._prefill:
+            self._apply_prefill(self._prefill)
+
+    def _apply_prefill(self, prefill) -> None:
+        """Pre-populate the fields with a specific material's missing data."""
+        elements, sab = prefill
+        self.preset_combo.setCurrentText(CUSTOM)
+        self.elements_edit.setText(" ".join(elements))
+        self.sab_edit.setText(" ".join(sab))
+        need = ", ".join([*elements, *sab]) or "nothing — already available"
+        self.status.setText(
+            f"Ready to download this material's data: {need}\nDownloads to: {self._user_dir}"
+        )
 
     def _apply_preset(self, name: str) -> None:
         if name == CUSTOM:

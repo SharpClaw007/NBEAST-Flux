@@ -13,6 +13,7 @@ the active library and which need a download — without hiding the rest.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -339,6 +340,26 @@ class MaterialSpec:
 
     def is_available(self, available: set[str]) -> bool:
         return self.required_names() <= available
+
+    def missing_data(self, available: set[str]) -> tuple[list[str], list[str]]:
+        """What to download to make this material runnable: (elements, S(α,β) tables).
+
+        Missing nuclides are collapsed to their element symbol (downloading an element
+        fetches all its isotopes), so a needs-data material yields a compact,
+        per-material download list rather than the whole library.
+        """
+        elements: set[str] = set()
+        sab: set[str] = set()
+        for name in self.required_names():
+            if name in available or name == "__unknown__":
+                continue
+            if name.startswith("c_"):
+                sab.add(name)
+            else:
+                match = re.match(r"^([A-Za-z]+)", name)
+                if match:
+                    elements.add(match.group(1))
+        return sorted(elements), sorted(sab)
 
 
 _MATERIALS: tuple[MaterialSpec, ...] = (

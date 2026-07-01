@@ -42,6 +42,18 @@ def test_required_names_enumerated_even_without_data():
     assert "c_D_in_D2O" in materials.LIBRARY["heavy_water"].required_names()
 
 
+def test_missing_data_is_per_material():
+    L = materials.LIBRARY
+    # exactly the missing elements — collapsed to element symbols for download
+    assert L["steel_304"].missing_data(BUNDLE) == (["Cr", "Fe", "Mn", "Ni"], [])
+    assert L["mox"].missing_data(BUNDLE) == (["Pu"], [])          # U, O already present
+    assert L["graphite"].missing_data(BUNDLE) == (["C"], ["c_Graphite"])
+    assert L["heavy_water"].missing_data(BUNDLE) == ([], ["c_D_in_D2O"])  # only the kernel
+    # available materials need nothing
+    assert L["uo2"].missing_data(BUNDLE) == ([], [])
+    assert L["water"].missing_data(BUNDLE) == ([], [])
+
+
 def test_available_names_parsing(tmp_path):
     xml = tmp_path / "cross_sections.xml"
     xml.write_text(

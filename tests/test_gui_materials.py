@@ -81,6 +81,16 @@ def test_needs_data_material_blocks_run(qapp, tmp_path):
     win.close()
 
 
+def test_data_manager_prefills_one_material(qapp, tmp_path):
+    from nbeast.gui.data_manager import DataManagerDialog
+
+    dialog = DataManagerDialog(active_xml=None, prefill=(["Fe", "Cr"], ["c_Graphite"]))
+    assert dialog.elements_edit.text() == "Fe Cr"
+    assert dialog.sab_edit.text() == "c_Graphite"
+    assert "this material" in dialog.status.text().lower()
+    dialog.close()
+
+
 def test_material_selection_persists_across_reopen(qapp, tmp_path):
     from nbeast.gui.main_window import MainWindow
 

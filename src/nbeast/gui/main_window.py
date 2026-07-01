@@ -131,7 +131,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(raw_action)
 
         data_action = QAction("Cross-section data…", self)
-        data_action.triggered.connect(self._open_data_manager)
+        data_action.triggered.connect(lambda: self._open_data_manager())
         file_menu.addAction(data_action)
 
         # CAD geometry (DAGMC): import when the native arm64 envs exist, else offer setup.
@@ -513,15 +513,16 @@ class MainWindow(QMainWindow):
             self._offer_data_download(mspec)
 
     def _offer_data_download(self, mspec) -> None:
-        missing = sorted(mspec.required_names() - materials.available_names(self._cross_sections))
-        shown = ", ".join(missing[:8]) + ("…" if len(missing) > 8 else "")
+        available = materials.available_names(self._cross_sections)
+        elements, sab = mspec.missing_data(available)
+        need = ", ".join([*elements, *sab]) or "additional data"
         resp = QMessageBox.question(
             self, "Material needs data",
-            f"{mspec.label} needs cross-section data not in the active library:\n  {shown}\n\n"
-            "It won't run until that data is available. Open the data downloader now?",
+            f"{mspec.label} needs cross-section data not in the active library:\n  {need}\n\n"
+            "Download just this material's data now?",
         )
         if resp == QMessageBox.Yes:
-            self._open_data_manager()
+            self._open_data_manager(prefill=(elements, sab))
 
     def _render_readonly(self, group: str) -> None:
         if group == "Settings":
@@ -964,10 +965,10 @@ class MainWindow(QMainWindow):
             )
             dialog.exec()
 
-    def _open_data_manager(self) -> None:
+    def _open_data_manager(self, prefill=None) -> None:
         from .data_manager import DataManagerDialog
 
-        dialog = DataManagerDialog(active_xml=self._cross_sections, parent=self)
+        dialog = DataManagerDialog(active_xml=self._cross_sections, parent=self, prefill=prefill)
         dialog.activated.connect(self.set_active_library)
         dialog.exec()
 
