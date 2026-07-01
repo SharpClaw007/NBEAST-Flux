@@ -62,17 +62,27 @@ def test_dialog_embeds_colour_coded_preview(qapp):
 
 
 def test_cad_results_render_volumetrically(qapp, tmp_path):
-    """CAD results route every field through the volumetric renderer (on the geometry),
-    not the flat 2D slice used for parametric templates."""
+    """A CAD run offers a 2D-slice + a 3D entry per field; the 3D entry routes through
+    the volumetric renderer (on the geometry)."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QListWidgetItem
+
     from nbeast.gui.main_window import MainWindow
 
     win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "p")
     win._statepoint = "sp.h5"
     win._cad_result = True
+    win._rebuild_results_list()
+    scores = {win.results_list.item(i).data(Qt.UserRole)
+              for i in range(win.results_list.count())}
+    assert {"flux", "flux__3d", "fission", "fission__3d"} <= scores
+
     routed = []
-    win._show_cad_field = lambda score, switch=True: routed.append(score)
-    for score in ("flux", "fission", "dose", "heating"):
-        win._show_field(score)
+    win._show_cad_field = lambda score, switch_tab=True: routed.append(score)
+    for base in ("flux", "fission", "dose", "heating"):
+        item = QListWidgetItem("x")
+        item.setData(Qt.UserRole, base + "__3d")
+        win._on_results_clicked(item)
     assert routed == ["flux", "fission", "dose", "heating"]
     win.close()
 

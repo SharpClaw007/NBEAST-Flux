@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 
 class FluxViewport(QWidget):
@@ -22,15 +22,6 @@ class FluxViewport(QWidget):
         self._placeholder = QLabel("Run a simulation to see the flux map here.")
         self._placeholder.setAlignment(Qt.AlignCenter)
         self._layout.addWidget(self._placeholder)
-
-        # Opt-in 3D: extrude the 2D slice across z (exact for z-uniform geometries).
-        self.view3d_check = QCheckBox("View field in 3D")
-        self.view3d_check.setToolTip(
-            "Extrude the 2D slice into a 3D block. Exact for z-uniform geometries "
-            "(pin cell, assembly, shield are infinite/reflective in z)."
-        )
-        self.view3d_check.hide()
-        self._layout.addWidget(self.view3d_check)
 
         caption = QLabel(
             "Spatial map of the selected field on a slice through the model. "

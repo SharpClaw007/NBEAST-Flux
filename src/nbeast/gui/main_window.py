@@ -60,6 +60,19 @@ FIELD_TITLES = {
     "flux_rel_err": "Flux relative error (1σ/mean)",
 }
 
+# The mesh fields the Results panel offers (a 2D-slice entry, and a 3D entry where 3D
+# is meaningful). Order sets the list order; each field's 3D entry follows its 2D one.
+_FIELD_ENTRIES = (
+    ("Scalar flux", "flux"),
+    ("Fission rate", "fission"),
+    ("Absorption rate", "absorption"),
+    ("Neutron production (ν-fission)", "nu-fission"),
+    ("Heating (energy deposition)", "heating"),
+    ("Neutron dose rate", "dose"),
+    ("Flux relative error", "flux_rel_err"),
+)
+_3D_SUFFIX = "__3d"
+
 
 def _inactive_for(batches: int) -> int:
     """A safe inactive-cycle count that leaves active batches even for small runs."""
@@ -91,7 +104,6 @@ class MainWindow(QMainWindow):
         self._cad_dialog = None   # the non-modal CAD import panel, when open
         self._cad_result = False  # current results are from a CAD run (render volumetric)
         self._cad_overlay = None  # (stls, colors, labels) geometry to overlay on CAD fields
-        self._current_field_score = "flux"  # last field shown (for the 2D/3D toggle)
         self._unit_system = "SI"  # display units (SI / US-Imperial)
         self._power_w = 0.0       # reactor power (eigenvalue) for absolute units; 0 = relative
         self._source_strength = 0.0  # source rate n/s (fixed source) for absolute units
@@ -276,26 +288,14 @@ class MainWindow(QMainWindow):
         props_dock.setWidget(self.properties)
         self.addDockWidget(Qt.LeftDockWidgetArea, props_dock)
 
-        # Right dock: results field picker (enabled once a run finishes).
+        # Right dock: results field picker (enabled once a run finishes). Built
+        # dynamically so it offers a 2D-slice + a 3D entry per field where 3D applies.
         self.results_list = QListWidget()
-        for label, score in (
-            ("Scalar flux", "flux"),
-            ("Fission rate", "fission"),
-            ("Absorption rate", "absorption"),
-            ("Neutron production (ν-fission)", "nu-fission"),
-            ("Heating (energy deposition)", "heating"),
-            ("Neutron dose rate", "dose"),
-            ("Flux relative error", "flux_rel_err"),
-            ("Scalar flux (3D volume)", "volume"),
-            ("Neutron tracks", "tracks"),
-        ):
-            item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, score)
-            self.results_list.addItem(item)
+        self._rebuild_results_list()
         self.results_list.setEnabled(False)
         self.results_list.setToolTip(
-            "Pick a result to view: scalar flux, fission rate, or neutron tracks "
-            "(available after a run)."
+            "Pick a result to view. Each field offers a 2D slice and, where meaningful, "
+            "a 3D view (available after a run)."
         )
         self.results_list.itemClicked.connect(self._on_results_clicked)
         results_dock = QDockWidget("Results", self)
@@ -334,7 +334,6 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.monitor = ConvergenceMonitor()
         self.flux_view = FluxViewport()
-        self.flux_view.view3d_check.toggled.connect(self._on_view3d_toggled)
         self.spectrum_view = SpectrumView()
         self.tabs.addTab(self.monitor, "Convergence")
         self.tabs.addTab(self.flux_view, "Flux map")
@@ -851,9 +850,15 @@ class MainWindow(QMainWindow):
             )
         else:
             self.monitor.clear_note()
+        self._rebuild_results_list()
         self.results_list.setEnabled(True)
-        self.results_list.setCurrentRow(0)
-        self._show_field("flux", switch_tab=False)
+        # Default view: 2D flux slice for templates, 3D flux volume for CAD (its headline).
+        if self._cad_result:
+            self._select_result("flux" + _3D_SUFFIX)
+            self._show_cad_field("flux", switch_tab=False)
+        else:
+            self._select_result("flux")
+            self._show_field("flux", switch_tab=False)
 
     def _surface_diagnostics(self) -> None:
         """Fold the trust check into the status bar — concise, non-blocking."""
@@ -898,24 +903,12 @@ class MainWindow(QMainWindow):
         return "flux_mesh", base, base
 
     def _show_field(self, score: str, switch_tab: bool = True) -> None:
-        """Render the chosen mesh field in the Flux-map tab.
+        """Render the chosen mesh field as a 2D slice map in the Flux-map tab.
 
         A ``*_rel_err`` score shows the relative-error map: the VTK written for the
         base score also carries its ``<label>_rel_err`` array, so we reuse it.
         """
         if not self._statepoint:
-            return
-        if self._cad_result:   # CAD is 3-D — render volumetrically on the geometry
-            self.flux_view.view3d_check.setVisible(False)
-            self._show_cad_field(score, switch_tab)
-            return
-        self._current_field_score = score
-        # The "View in 3D" toggle is offered only where the slice extrudes exactly (a
-        # z-uniform geometry). When on, render the extruded 3D block instead of the slice.
-        supports_3d = self.spec is not None and self.spec.z_invariant
-        self.flux_view.view3d_check.setVisible(supports_3d)
-        if supports_3d and self.flux_view.view3d_check.isChecked():
-            self._show_extruded_field(score, switch_tab)
             return
         from nbeast.core.results import Results
 
@@ -933,19 +926,47 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
 
+    # ---- results list -----------------------------------------------------
+    def _add_result_item(self, label: str, score: str) -> None:
+        item = QListWidgetItem(label)
+        item.setData(Qt.UserRole, score)
+        self.results_list.addItem(item)
+
+    def _rebuild_results_list(self) -> None:
+        """Offer a 2D-slice + a 3D entry per field, per the current results' geometry:
+        z-uniform templates and CAD get 3D for every field; a true-3D template (Godiva)
+        gets 3D only for the scalar flux (its real 3D tally)."""
+        self.results_list.clear()
+        is_cad = self._cad_result
+        z_inv = (not is_cad) and self.spec is not None and self.spec.z_invariant
+        for label, score in _FIELD_ENTRIES:
+            self._add_result_item(label, score)                 # 2D slice
+            if is_cad or z_inv or score == "flux":              # 3D where meaningful
+                self._add_result_item(f"{label} (3D)", score + _3D_SUFFIX)
+        if not is_cad:
+            self._add_result_item("Neutron tracks", "tracks")
+
+    def _select_result(self, score: str) -> None:
+        for i in range(self.results_list.count()):
+            if self.results_list.item(i).data(Qt.UserRole) == score:
+                self.results_list.setCurrentRow(i)
+                return
+
     def _on_results_clicked(self, item) -> None:
         score = item.data(Qt.UserRole)
         if score == "tracks":
             self.show_tracks()
-        elif score == "volume":
-            self._show_volume()
+            return
+        is_3d = score.endswith(_3D_SUFFIX)
+        base = score[: -len(_3D_SUFFIX)] if is_3d else score
+        if not is_3d:
+            self._show_field(base, switch_tab=True)         # 2D slice
+        elif self._cad_result:
+            self._show_cad_field(base, switch_tab=True)     # 3D volume on geometry
+        elif self.spec is not None and self.spec.z_invariant:
+            self._show_extruded_field(base, switch_tab=True)  # extruded 3D block
         else:
-            self._show_field(score, switch_tab=True)
-
-    def _on_view3d_toggled(self, _checked: bool) -> None:
-        """Re-render the current field in the chosen 2D/3D mode."""
-        if self._statepoint and not self._cad_result and self.results_list.isEnabled():
-            self._show_field(self._current_field_score, switch_tab=False)
+            self._show_volume()                              # real 3D flux (Godiva)
 
     def _show_extruded_field(self, score: str, switch_tab: bool = True) -> None:
         """Render a z-invariant template field as a 3-D block by extruding its 2D slice

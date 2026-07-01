@@ -234,29 +234,53 @@ def test_field_bar_title_relative_by_default(qapp, tmp_path):
     win.close()
 
 
-def test_view3d_toggle_only_for_z_invariant_templates(qapp, tmp_path):
-    """The 2D→3D extrusion toggle is offered only where it's exact (z-uniform geometry),
-    and when enabled routes fields through the extruded 3D renderer."""
+def test_results_list_has_2d_and_3d_entries(qapp, tmp_path):
+    """Each field gets a 2D-slice entry and, where 3D is meaningful, a separate 3D entry.
+    z-uniform templates get 3D for every field; Godiva (true 3D sphere) only for flux."""
+    from PySide6.QtCore import Qt
+
+    win = _win(tmp_path)
+
+    def scores():
+        return [win.results_list.item(i).data(Qt.UserRole)
+                for i in range(win.results_list.count())]
+
+    win.set_template("Pin cell")
+    win._rebuild_results_list()
+    s = scores()
+    assert "flux" in s and "flux__3d" in s              # plain flux = 2D slice; separate 3D entry
+    assert "fission" in s and "fission__3d" in s
+    assert "tracks" in s
+
+    win.set_template("Godiva")
+    win._rebuild_results_list()
+    s = scores()
+    assert "flux" in s and "flux__3d" in s              # flux has a real 3D tally
+    assert "fission" in s and "fission__3d" not in s    # reaction rates 2D only on a 3D sphere
+    win.close()
+
+
+def test_result_3d_click_routes_by_geometry(qapp, tmp_path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QListWidgetItem
+
     win = _win(tmp_path)
     win._statepoint = "sp.h5"
-    win.results_list.setEnabled(True)
-    extruded = []
-    win._show_extruded_field = lambda score, switch_tab=True: extruded.append(score)
+    calls = {"2d": [], "extruded": [], "cad": [], "volume": []}
+    win._show_field = lambda s, switch_tab=True: calls["2d"].append(s)
+    win._show_extruded_field = lambda s, switch_tab=True: calls["extruded"].append(s)
+    win._show_cad_field = lambda s, switch_tab=True: calls["cad"].append(s)
+    win._show_volume = lambda: calls["volume"].append("flux")
 
-    # Godiva — a true 3D sphere: no exact extrusion, so no toggle
-    win.set_template("Godiva")
-    _reset_materials(win)
-    win._show_field("flux")
-    assert win.flux_view.view3d_check.isHidden()
+    def click(score):
+        item = QListWidgetItem("x")
+        item.setData(Qt.UserRole, score)
+        win._on_results_clicked(item)
 
-    # Pin cell — z-uniform: toggle offered; enabling it routes fields to 3D
-    win.set_template("Pin cell")
-    _reset_materials(win)
-    win._show_field("flux")
-    assert not win.flux_view.view3d_check.isHidden()
-    win.flux_view.view3d_check.setChecked(True)
-    win._show_field("fission")
-    assert "fission" in extruded
+    win.set_template("Pin cell")            # z-uniform → 3D extrudes
+    click("fission")
+    click("fission__3d")
+    assert calls["2d"] == ["fission"] and calls["extruded"] == ["fission"]
     win.close()
 
 
