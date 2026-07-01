@@ -75,6 +75,30 @@ def test_poisoning_dialog_gates_on_data_and_template(qapp, tmp_path):
     win.close()
 
 
+def test_analysis_panel_replaces_menu_and_gates_per_template(qapp, tmp_path):
+    from nbeast.gui.main_window import CAD_TEMPLATE
+
+    win = _win(tmp_path)
+    # the Analysis menu is gone — the tools live in the Analysis panel
+    assert not any("Analysis" in a.text() for a in win.menuBar().actions())
+    panel = win.analysis_panel
+    assert set(panel._buttons) == {"sweep", "moderation", "poisoning", "mgxs", "depletion"}
+
+    def enabled():
+        return {k: panel._buttons[k].isEnabled() for k in panel._buttons}
+
+    win.set_template("Pin cell")
+    assert all(enabled().values())                    # everything applies to a thermal pin
+    win.set_template("Godiva")
+    e = enabled()
+    assert e["sweep"] and e["mgxs"] and not e["moderation"] and not e["poisoning"]
+    win.set_template("Shield slab")
+    assert not any(enabled().values())                # fixed source: no analysis applies
+    win.set_template(CAD_TEMPLATE)
+    assert not any(enabled().values())                # CAD: no parametric analysis
+    win.close()
+
+
 def test_fixed_source_uses_source_strength(qapp, tmp_path):
     win = _win(tmp_path)
 

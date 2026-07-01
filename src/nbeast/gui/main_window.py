@@ -159,46 +159,8 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda _checked=False, k=key: self.load_example(k))
             examples_menu.addAction(action)
 
-        analysis_menu = self.menuBar().addMenu("&Analysis")
-        sweep_action = QAction("Parameter sweep / criticality search…", self)
-        sweep_action.setToolTip(
-            "Vary one parameter over a range, or search for the value that makes the "
-            "model critical (k = target)."
-        )
-        sweep_action.triggered.connect(self._open_sweep)
-        analysis_menu.addAction(sweep_action)
-
-        moderation_action = QAction("Moderation / reactivity curve…", self)
-        moderation_action.setToolTip(
-            "Sweep the moderator from voided to flooded — k-eff, reactivity, and the "
-            "source-driven power proxy across the whole moderation range."
-        )
-        moderation_action.triggered.connect(self._open_moderation)
-        analysis_menu.addAction(moderation_action)
-
-        poison_action = QAction("Reactor poisoning (Xe-135 / Sm-149)…", self)
-        poison_action.setToolTip(
-            "Equilibrium xenon + samarium reactivity worth (needs Xe-135/Sm-149 data — "
-            "optional download)."
-        )
-        poison_action.triggered.connect(self._open_poisoning)
-        analysis_menu.addAction(poison_action)
-
-        mgxs_action = QAction("Generate multigroup constants…", self)
-        mgxs_action.setToolTip(
-            "Collapse the run into few-group cross sections (total, absorption, "
-            "fission, ν-fission, χ) for a diffusion code."
-        )
-        mgxs_action.triggered.connect(self._open_mgxs)
-        analysis_menu.addAction(mgxs_action)
-
-        depletion_action = QAction("Depletion / burnup…", self)
-        depletion_action.setToolTip(
-            "Track k-effective and nuclide inventory as fuel burns (needs depletion "
-            "data — optional add-on)."
-        )
-        depletion_action.triggered.connect(self._open_depletion)
-        analysis_menu.addAction(depletion_action)
+        # Analysis tools live in the "Analysis" tab (beside Results / Run history),
+        # built in _build_docks — not a menu.
 
     # Curated starting points: (template, param overrides, quality, status hint).
     _EXAMPLES = {
@@ -345,8 +307,25 @@ class MainWindow(QMainWindow):
         history_dock = QDockWidget("Run history", self)
         history_dock.setWidget(self.history_panel)
         self.addDockWidget(Qt.RightDockWidgetArea, history_dock)
+
+        # Analysis tools: a tab beside Results + Run history (was the Analysis menu).
+        from .analysis_panel import AnalysisPanel
+
+        self.analysis_panel = AnalysisPanel({
+            "sweep": self._open_sweep,
+            "moderation": self._open_moderation,
+            "poisoning": self._open_poisoning,
+            "mgxs": self._open_mgxs,
+            "depletion": self._open_depletion,
+        })
+        analysis_dock = QDockWidget("Analysis", self)
+        analysis_dock.setWidget(self.analysis_panel)
+        self.addDockWidget(Qt.RightDockWidgetArea, analysis_dock)
+
         self.tabifyDockWidget(results_dock, history_dock)
+        self.tabifyDockWidget(history_dock, analysis_dock)
         results_dock.raise_()
+        self._update_analysis_availability()
 
     def _build_central(self) -> None:
         self.tabs = QTabWidget()
@@ -495,6 +474,7 @@ class MainWindow(QMainWindow):
         return settings
 
     def _refresh_tree(self) -> None:
+        self._update_analysis_availability()
         self.model_tree.clear()
         if self._is_cad:
             self._refresh_cad_tree()
@@ -1164,6 +1144,20 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Raw data exported to {out}")
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"Raw export failed: {exc}")
+
+    def _update_analysis_availability(self) -> None:
+        """Grey out analysis tools that don't apply to the current template."""
+        if not hasattr(self, "analysis_panel"):
+            return
+        spec = self.spec
+        eigen = spec is not None and not self._is_fixed_source
+        moderated = eigen and any(r.key == "moderator" for r in spec.material_roles)
+        eig_reason = "Needs an eigenvalue template (not Custom CAD or the fixed-source shield)."
+        mod_reason = "Needs a moderated thermal lattice (pin cell or assembly)."
+        for key in ("sweep", "mgxs", "depletion"):
+            self.analysis_panel.set_enabled(key, eigen, eig_reason)
+        for key in ("moderation", "poisoning"):
+            self.analysis_panel.set_enabled(key, moderated, mod_reason)
 
     def _analysis_needs_template(self) -> bool:
         """The Analysis tools (sweep, multigroup, depletion) are eigenvalue-only —
