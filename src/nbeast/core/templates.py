@@ -44,6 +44,15 @@ def scale_density(mat: openmc.Material, fraction: float | None) -> openmc.Materi
     return mat
 
 
+def _poisoned(fuel: openmc.Material, poison: tuple[float, float] | None) -> openmc.Material:
+    """Add equilibrium Xe-135/Sm-149 to a fuel if a (Xe, Sm) ratio pair is given."""
+    if poison is None:
+        return fuel
+    from . import poisons
+
+    return poisons.add_to_fuel(fuel, poison[0], poison[1])
+
+
 def _apply_temperature(settings: openmc.Settings, temperature: float | None) -> None:
     """Run every cell at ``temperature`` (K) — the knob for Doppler-feedback studies.
     Left at the data's default when None.
@@ -72,6 +81,7 @@ def pin_cell(
     clad_inner_radius: float = 0.40,
     clad_outer_radius: float = 0.46,
     moderator_density: float | None = None,
+    poison: tuple[float, float] | None = None,
     batches: int = 100,
     inactive: int = 20,
     particles: int = 2000,
@@ -81,8 +91,9 @@ def pin_cell(
     """PWR-style pin cell with reflective boundaries (infinite lattice). Fuel, clad,
     and moderator are chosen by material-catalog key; ``enrichment`` applies only to
     enrichment-parametric fuels. ``moderator_density`` (fraction of nominal) drives
-    void / moderation studies."""
-    fuel = materials.build(fuel, enrichment=enrichment)
+    void / moderation studies; ``poison`` = (Xe/U235, Sm/U235) adds equilibrium
+    fission-product poisons."""
+    fuel = _poisoned(materials.build(fuel, enrichment=enrichment), poison)
     clad = materials.build(clad)
     mod = scale_density(materials.build(moderator), moderator_density)
 
@@ -127,6 +138,7 @@ def assembly(
     clad_inner_radius: float = 0.40,
     clad_outer_radius: float = 0.46,
     moderator_density: float | None = None,
+    poison: tuple[float, float] | None = None,
     batches: int = 100,
     inactive: int = 20,
     particles: int = 5000,
@@ -134,9 +146,10 @@ def assembly(
     temperature: float | None = None,
 ) -> openmc.model.Model:
     """An N×N square lattice of identical pins (materials chosen by catalog key).
-    ``moderator_density`` (fraction of nominal) drives void / moderation studies."""
+    ``moderator_density`` (fraction of nominal) drives void / moderation studies;
+    ``poison`` = (Xe/U235, Sm/U235) adds equilibrium fission-product poisons."""
     n_side = int(n_side)
-    fuel = materials.build(fuel, enrichment=enrichment)
+    fuel = _poisoned(materials.build(fuel, enrichment=enrichment), poison)
     clad = materials.build(clad)
     mod = scale_density(materials.build(moderator), moderator_density)
 

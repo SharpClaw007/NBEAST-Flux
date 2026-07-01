@@ -71,6 +71,15 @@ Two-group (CASMO-2) constants collapsed from the pin cell are physically correct
 fission spectrum χ is entirely in the fast group (1.000 / 0.000), and both absorption
 and ν-fission are far larger in the thermal group, as expected for low-enriched UO₂.
 
+### Moderation curve
+
+Sweeping the pin cell's moderator density from voided to flooded traces the classic
+under-moderation curve: k rises from **0.79 at 5 % density** (deeply subcritical,
+fast-hardened) through the critical crossing (~12 %) to **1.41 at full density** — the
+nominal pin k∞. The steep positive slope is the (safe) negative void coefficient a PWR
+is built around. The dialog overlays reactivity and the source-driven multiplication
+M = 1/(1−k), which diverges at the critical crossing.
+
 ### Absolute-unit normalization
 
 Result maps are per source neutron by default (relative). Given a reactor power, they

@@ -176,6 +176,14 @@ class MainWindow(QMainWindow):
         moderation_action.triggered.connect(self._open_moderation)
         analysis_menu.addAction(moderation_action)
 
+        poison_action = QAction("Reactor poisoning (Xe-135 / Sm-149)…", self)
+        poison_action.setToolTip(
+            "Equilibrium xenon + samarium reactivity worth (needs Xe-135/Sm-149 data — "
+            "optional download)."
+        )
+        poison_action.triggered.connect(self._open_poisoning)
+        analysis_menu.addAction(poison_action)
+
         mgxs_action = QAction("Generate multigroup constants…", self)
         mgxs_action.setToolTip(
             "Collapse the run into few-group cross sections (total, absorption, "
@@ -1193,6 +1201,18 @@ class MainWindow(QMainWindow):
         from .moderation_dialog import ModerationDialog
 
         ModerationDialog(self, parent=self).exec()
+
+    def _open_poisoning(self) -> None:
+        if not self._analysis_needs_template():
+            return
+        if not any(r.key == "moderator" for r in self.spec.material_roles):
+            self.statusBar().showMessage(
+                "Poisoning applies to a thermal fuel lattice (pin cell or assembly)."
+            )
+            return
+        from .poisoning_dialog import PoisoningDialog
+
+        PoisoningDialog(self, parent=self).exec()
 
     def _open_mgxs(self) -> None:
         if not self._analysis_needs_template():

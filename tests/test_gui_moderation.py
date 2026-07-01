@@ -51,6 +51,30 @@ def test_moderation_gated_off_non_moderated(qapp, tmp_path):
     win.close()
 
 
+def test_poisoning_dialog_gates_on_data_and_template(qapp, tmp_path):
+    from nbeast.gui.poisoning_dialog import PoisoningDialog
+
+    win = _win(tmp_path)
+    win.set_template("Pin cell")
+    dialog = PoisoningDialog(win)
+    # bundled library lacks Xe/Sm → run disabled, download offered
+    assert not dialog.run_btn.isEnabled()
+    assert not dialog.download_btn.isHidden()
+    # the three build cases: clean, +Sm, +Xe+Sm
+    builder = dialog._make_builder()
+    nuclides = [set().union(*[m.get_nuclides() for m in builder(x).materials]) for x in (0, 1, 2)]
+    assert "Xe135" not in nuclides[0] and "Sm149" not in nuclides[0]
+    assert "Sm149" in nuclides[1] and "Xe135" not in nuclides[1]
+    assert {"Xe135", "Sm149"} <= nuclides[2]
+    dialog.close()
+    # not applicable to a fast metal / fixed source
+    for template in ("Godiva", "Shield slab"):
+        win.set_template(template)
+        win._open_poisoning()
+        assert not win.controller.running
+    win.close()
+
+
 def test_fixed_source_uses_source_strength(qapp, tmp_path):
     win = _win(tmp_path)
 
