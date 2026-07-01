@@ -45,17 +45,19 @@ def _win(tmp_path):
     return win
 
 
-def test_combo_populates_and_flags_needs_data(qapp, tmp_path):
+def test_combo_lists_every_installed_material_cross_category(qapp, tmp_path):
     win = _win(tmp_path)
     win.set_template("Pin cell")
     win._render_materials_editors()
     assert win.properties.rowCount() == 5  # 3 roles + enrichment + temperature
-    combo = win.properties.cellWidget(0, 1)
+    combo = win.properties.cellWidget(0, 1)                     # the Fuel slot
     keys = [combo.itemData(i) for i in range(combo.count())]
     labels = [combo.itemText(i) for i in range(combo.count())]
-    assert "uo2" in keys and "mox" in keys
-    assert any(label == "UO₂ fuel" for label in labels)             # available: clean label
-    assert any("MOX" in label and "needs data" in label for label in labels)  # flagged
+    assert "uo2" in keys                                        # installed fuel present
+    assert "mox" not in keys                                    # needs Pu → not shown
+    assert not any("needs data" in label for label in labels)  # no greyed needs-data entries
+    # every installed material is assignable to any slot — even non-fuels in the Fuel slot
+    assert "water" in keys and "zircaloy" in keys
     win.close()
 
 

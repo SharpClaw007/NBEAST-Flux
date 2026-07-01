@@ -647,25 +647,37 @@ class MainWindow(QMainWindow):
             row += 1
 
     def _make_material_combo(self, role, available: set):
-        """A type-to-filter material dropdown for one role; materials whose data isn't
-        in the active library are listed but greyed and marked 'needs data'."""
+        """A type-to-filter dropdown of **every installed material** — any of them can
+        go in any slot. Role-typical materials (this slot's category) are listed first,
+        then all other installed materials. Materials that still need data aren't shown
+        (install them in the Data Library); the only exception is the current selection
+        if its data was removed, so it stays visible."""
         combo = QComboBox()
         combo.setEditable(True)
         combo.setInsertPolicy(QComboBox.NoInsert)
         combo.setToolTip(
-            "Type to filter. 'needs data' materials require extra cross sections — "
-            "selecting one opens the Data Library (File ▸ Data library…)."
+            "Any installed material can be assigned to any slot. Install more materials "
+            "in the Data Library (File ▸ Data library…)."
         )
         current = self._material_values[self._template][role.key]
-        chosen = 0
-        for i, mspec in enumerate(materials.by_category(role.category)):
+        typical = [m for m in materials.by_category(role.category) if m.is_available(available)]
+        typical_keys = {m.key for m in typical}
+        others = sorted((m for m in materials.LIBRARY.values()
+                         if m.is_available(available) and m.key not in typical_keys),
+                        key=lambda m: m.label)
+        ordered = typical + others
+        keys = [m.key for m in ordered]
+        if current not in keys and current in materials.LIBRARY:
+            ordered.insert(0, materials.LIBRARY[current])   # keep a data-removed selection visible
+            keys.insert(0, current)
+
+        for mspec in ordered:
             ok = mspec.is_available(available)
             combo.addItem(mspec.label if ok else f"{mspec.label} — needs data", mspec.key)
             if not ok:
-                combo.setItemData(i, QColor("#999"), Qt.ForegroundRole)
-            if mspec.key == current:
-                chosen = i
-        combo.setCurrentIndex(chosen)
+                combo.setItemData(combo.count() - 1, QColor("#999"), Qt.ForegroundRole)
+        combo.setCurrentIndex(keys.index(current) if current in keys else 0)
+
         completer = combo.completer()
         completer.setCompletionMode(QCompleter.PopupCompletion)
         completer.setFilterMode(Qt.MatchContains)
