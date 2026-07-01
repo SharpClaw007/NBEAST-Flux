@@ -144,6 +144,22 @@ def test_cad_template_guards(qapp, tmp_path):
     win.close()
 
 
+def test_analysis_tools_guarded_off_eigenvalue(qapp, tmp_path):
+    """Sweep / multigroup / depletion are eigenvalue-only — they must refuse the
+    fixed-source shield and the CAD template without opening (or crashing)."""
+    from nbeast.gui.main_window import CAD_TEMPLATE
+
+    win = _win(tmp_path)
+    for template in ("Shield slab", CAD_TEMPLATE):
+        win.set_template(template)
+        for opener in (win._open_sweep, win._open_mgxs, win._open_depletion):
+            opener()
+            assert not win.controller.running
+            msg = win.statusBar().currentMessage().lower()
+            assert "eigenvalue" in msg or "parametric template" in msg
+    win.close()
+
+
 def test_rapid_template_switching(qapp, tmp_path):
     from nbeast.gui.main_window import CAD_TEMPLATE
 

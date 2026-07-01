@@ -1010,10 +1010,18 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Raw export failed: {exc}")
 
     def _analysis_needs_template(self) -> bool:
-        """Analysis tools operate on a parametric template — not the CAD import."""
+        """The Analysis tools (sweep, multigroup, depletion) are eigenvalue-only —
+        they all rely on k-effective / a fissile fuel, so they don't apply to the CAD
+        import or the fixed-source shield."""
         if self.spec is None:
             self.statusBar().showMessage(
                 "This analysis works on a parametric template — pick one (not Custom CAD)."
+            )
+            return False
+        if self._is_fixed_source:
+            self.statusBar().showMessage(
+                "This analysis is for eigenvalue (criticality) models — it doesn't apply "
+                "to the fixed-source shield (there's no k-effective)."
             )
             return False
         return True
