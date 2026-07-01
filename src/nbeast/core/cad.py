@@ -176,11 +176,13 @@ def _run_json(python: pathlib.Path, script: pathlib.Path, payload: dict, timeout
     raise RuntimeError("no result from worker:\n" + proc.stdout[-2000:])
 
 
-def inspect_step(step_path) -> int:
-    """Return the number of solids in a STEP file (for per-volume material assignment)."""
+def inspect_step(step_path) -> dict:
+    """Inspect a STEP file: ``{"n_solids": int, "extent": float|None}`` — the solid
+    count (for per-volume material assignment) and the geometry's largest dimension
+    (for scaling sensible default mesh sizes)."""
     if cad_python() is None:
         raise RuntimeError("CAD env not available")
-    return _run_json(cad_python(), _GEN, {"mode": "inspect", "step": str(step_path)})["n_solids"]
+    return _run_json(cad_python(), _GEN, {"mode": "inspect", "step": str(step_path)})
 
 
 def tessellate(step_path, out_dir) -> list[str]:
@@ -219,4 +221,13 @@ def run_model(h5m_path, materials, batches: int = 50, inactive: int = 10,
         "batches": batches, "inactive": inactive, "particles": particles,
         "cross_sections": cross_sections or os.environ.get("OPENMC_CROSS_SECTIONS"),
     }
-    return _run_json(dagmc_python(), _RUN, payload)
+    try:
+        return _run_json(dagmc_python(), _RUN, payload)
+    except RuntimeError as exc:
+        if "lost particle" in str(exc).lower():
+            raise RuntimeError(
+                "DAGMC lost particles — the geometry isn't watertight for transport. "
+                "Usually the mesh is too coarse for the geometry (use a smaller max/min "
+                "mesh size) or solids overlap / leave gaps. Try re-meshing finer."
+            ) from exc
+        raise

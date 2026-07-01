@@ -162,13 +162,27 @@ class CadImportDialog(QDialog):
         self._start(lambda: cad.inspect_step(path), self._on_inspected)
 
     @Slot(object)
-    def _on_inspected(self, n_solids: int) -> None:
+    def _on_inspected(self, info) -> None:
         self._teardown()
+        # inspect_step returns a dict; the UI unit test passes a bare count.
+        n_solids = info["n_solids"] if isinstance(info, dict) else int(info)
+        extent = info.get("extent") if isinstance(info, dict) else None
         self.table.setRowCount(n_solids)
         for i in range(n_solids):
             self.table.setItem(i, 0, QTableWidgetItem(f"Solid {i}"))
             self.table.setCellWidget(i, 1, self._material_combo())
-        self._set_busy(False, f"{n_solids} solid(s) found — assign materials, then Generate & run.")
+
+        note = f"{n_solids} solid(s) found — assign materials, then Generate & run."
+        if extent:
+            # Scale mesh sizes to the geometry so faceting is fine enough to stay
+            # watertight (coarse meshing on small parts loses particles at run time).
+            mx = min(max(extent / 10.0, self.max_mesh.minimum()), self.max_mesh.maximum())
+            mn = min(max(extent / 40.0, self.min_mesh.minimum()), self.min_mesh.maximum())
+            self.max_mesh.setValue(mx)
+            self.min_mesh.setValue(mn)
+            note = (f"{n_solids} solid(s), size ≈ {extent:g} — mesh sized to fit. "
+                    "Assign materials, then Generate & run.")
+        self._set_busy(False, note)
 
     # ---- 3D preview ------------------------------------------------------
     def _preview(self) -> None:

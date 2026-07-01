@@ -50,8 +50,9 @@ def test_end_to_end(tmp_path):
          f"import cadquery as cq; cq.exporters.export(cq.Workplane().sphere(8.7), '{step}')"],
         check=True,
     )
-    n = cad.inspect_step(step)
-    assert n == 1
+    info = cad.inspect_step(step)
+    assert info["n_solids"] == 1
+    assert info["extent"] == pytest.approx(17.4, abs=1.0)  # sphere of r=8.7 -> ~17.4 across
     h5m = cad.generate_h5m(step, ["heu"], tmp_path / "m.h5m", max_mesh_size=3.0, min_mesh_size=0.5)
     res = cad.run_model(h5m, cad.material_specs(["heu"]), batches=20, inactive=5, particles=1000)
     assert 0.7 < res["keff"] < 1.2

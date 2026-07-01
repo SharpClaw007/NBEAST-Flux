@@ -18,8 +18,15 @@ def main() -> None:
         import cadquery as cq
 
         result = cq.importers.importStep(job["step"])
-        n = len(result.solids().vals())
-        print("RESULT:" + json.dumps({"n_solids": n}))
+        solids = result.solids().vals()
+        n = len(solids)
+        extent = None
+        try:
+            bb = cq.Compound.makeCompound(solids).BoundingBox()
+            extent = max(bb.xlen, bb.ylen, bb.zlen)
+        except Exception:  # noqa: BLE001 — bbox is a best-effort convenience
+            pass
+        print("RESULT:" + json.dumps({"n_solids": n, "extent": extent}))
 
     elif mode == "tessellate":
         import cadquery as cq
