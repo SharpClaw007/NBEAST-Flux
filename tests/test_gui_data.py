@@ -25,8 +25,22 @@ def test_data_library_categorizes_everything(qapp):
     assert {"Fuels", "Moderators & reflectors", "Coolants",
             "Cladding & structural", "Absorbers"} <= set(cats)
     assert any("Poisons" in c for c in cats) and "Depletion chains" in cats
+    assert any("All elements" in c for c in cats)
     # every-download button carries a size estimate
     assert "GB" in dialog.everything_btn.text() or "MB" in dialog.everything_btn.text()
+    dialog.close()
+
+
+def test_data_library_exposes_every_element(qapp):
+    """Beyond the catalog materials, the full periodic table of data is installable."""
+    from nbeast.core import data
+    from nbeast.gui.data_library import DataLibraryDialog
+
+    dialog = DataLibraryDialog(active_xml=None, starter_xml=None)
+    all_cat = next(dialog.tree.topLevelItem(i) for i in range(dialog.tree.topLevelItemCount())
+                   if "All elements" in dialog.tree.topLevelItem(i).text(0))
+    assert all_cat.childCount() == len(data.all_elements())
+    assert len(data.all_elements()) > 90     # ~97 elements, the full library
     dialog.close()
 
 

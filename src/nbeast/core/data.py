@@ -76,6 +76,19 @@ def everything_size() -> int:
     return int(_SIZES.get("total", 0))
 
 
+def all_elements() -> list[str]:
+    """Every element with neutron cross-section data available (atomic-number order)."""
+    def z(symbol: str) -> int:
+        try:
+            import openmc.data
+
+            return openmc.data.ATOMIC_NUMBER.get(symbol, 999)
+        except Exception:  # noqa: BLE001
+            return 999
+
+    return sorted(_SIZES.get("elements", {}), key=z)
+
+
 def size_for(elements=(), nuclides=(), sab=()) -> int:
     """Approximate download size (bytes) for a selection of elements/nuclides/S(α,β)."""
     total = sum(element_size(e) for e in elements)

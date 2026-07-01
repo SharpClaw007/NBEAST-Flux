@@ -133,10 +133,16 @@ class DataLibraryDialog(QDialog):
         dep_item = self._add_depletion_category()
         if self._focus_category == "Depletion":
             focus_item = dep_item
+        all_item = self._add_all_elements_category(available)
+        if self._focus_category == "All elements":
+            focus_item = all_item
         self.tree.expandAll()
+        all_item.setExpanded(False)   # 97 rows — collapsed unless the user opens it
         if focus_item is not None:
             self.tree.scrollToItem(focus_item)
             focus_item.setSelected(True)
+            if focus_item is all_item:
+                all_item.setExpanded(True)
         self.status.setText(f"Active library: {self._active_xml or '(bundled starter)'}")
 
     def _cat_item(self, label: str) -> QTreeWidgetItem:
@@ -194,6 +200,26 @@ class DataLibraryDialog(QDialog):
             self._row_button(row, "Delete", lambda s=name: self._delete(sab=[s]))
         cat.setText(1, f"{len(elements) + len(sabs)} downloaded")
         cat.setText(2, data.format_size(total))
+        return cat
+
+    def _add_all_elements_category(self, available) -> QTreeWidgetItem:
+        """The complete periodic table of available data — every element installable on
+        its own, beyond the ones the catalog materials happen to use."""
+        present = {data.element_of(n) for n in available}
+        elements = data.all_elements()
+        cat = self._cat_item("All elements — full ENDF/B-VIII.0 library (556 nuclides)")
+        installed = 0
+        for element in elements:
+            ok = element in present
+            installed += ok
+            row = QTreeWidgetItem([element, "✅ installed" if ok else "",
+                                   "" if ok else data.format_size(data.element_size(element))])
+            cat.addChild(row)
+            if not ok:
+                self._row_button(row, "Download",
+                                 lambda e=element: self._download(elements=[e]))
+        cat.setText(1, f"{installed}/{len(elements)} elements installed")
+        cat.setText(2, data.format_size(data.everything_size()))
         return cat
 
     def _add_poison_category(self, available) -> QTreeWidgetItem:
