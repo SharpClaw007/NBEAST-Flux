@@ -75,7 +75,9 @@ def main() -> None:
     dose_mesh.filters = [openmc.MeshFilter(mesh), openmc.EnergyFunctionFilter(energies_dose, coeffs_dose)]
     dose_mesh.scores = ["flux"]
 
-    # Full 3D flux field for the publication volume render.
+    # Full 3D fields for the volume renders — every score, so a CAD run can show each
+    # result (flux, reaction rates, heating, dose) volumetrically on the geometry, not
+    # just as a flat slice.
     mm = 36
     vmesh = openmc.RegularMesh()
     vmesh.dimension = (mm, mm, mm)
@@ -83,9 +85,15 @@ def main() -> None:
     vmesh.upper_right = ur
     flux_volume = openmc.Tally(name="flux_volume")
     flux_volume.filters = [openmc.MeshFilter(vmesh)]
-    flux_volume.scores = ["flux"]
+    flux_volume.scores = ["flux", "fission", "absorption", "nu-fission", "heating"]
 
-    tallies = openmc.Tallies([spectrum, flux_mesh, power_norm, dose_mesh, flux_volume])
+    dose_volume = openmc.Tally(name="dose_volume")
+    dose_volume.filters = [openmc.MeshFilter(vmesh),
+                           openmc.EnergyFunctionFilter(energies_dose, coeffs_dose)]
+    dose_volume.scores = ["flux"]
+
+    tallies = openmc.Tallies(
+        [spectrum, flux_mesh, power_norm, dose_mesh, flux_volume, dose_volume])
 
     rundir = os.path.join(os.path.expanduser("~"), ".nbeast", "cad_run")
     os.makedirs(rundir, exist_ok=True)

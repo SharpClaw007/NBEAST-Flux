@@ -217,13 +217,21 @@ class Results:
 
     def flux_volume(self):
         """3D flux field for the volume render: (values, dims, lower_left, upper_right)."""
-        tally = self._sp.get_tally(name="flux_volume")
+        mean, dims, lower, upper, _rel = self.field_volume("flux")
+        return mean, dims, lower, upper
+
+    def field_volume(self, score: str = "flux", name: str = "flux_volume"):
+        """A 3D mesh-tally score for volumetric rendering:
+        (mean, dims, lower_left, upper_right, rel_err). Non-finite values → 0."""
+        tally = self._sp.get_tally(name=name)
         mesh = tally.find_filter(openmc.MeshFilter).mesh
-        values = tally.get_values(scores=["flux"]).ravel()
+        mean = _finite(tally.get_values(scores=[score]).ravel())
+        std = _finite(tally.get_values(scores=[score], value="std_dev").ravel())
+        rel = np.divide(std, mean, out=np.zeros_like(mean), where=mean > 0)
         dims = tuple(int(d) for d in mesh.dimension)
         lower = tuple(float(v) for v in mesh.lower_left)
         upper = tuple(float(v) for v in mesh.upper_right)
-        return values, dims, lower, upper
+        return mean, dims, lower, upper, rel
 
     # ---- raw data export -------------------------------------------------
     def mesh_arrays(self, name: str = "flux_mesh") -> dict:

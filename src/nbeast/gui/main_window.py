@@ -89,6 +89,8 @@ class MainWindow(QMainWindow):
         # Custom-CAD template state (populated by the CAD import dialog).
         self._cad = {"step": None, "materials": []}
         self._cad_dialog = None   # the non-modal CAD import panel, when open
+        self._cad_result = False  # current results are from a CAD run (render volumetric)
+        self._cad_overlay = None  # (stls, colors, labels) geometry to overlay on CAD fields
         self._unit_system = "SI"  # display units (SI / US-Imperial)
         self._power_w = 0.0       # reactor power (eigenvalue) for absolute units; 0 = relative
         self._source_strength = 0.0  # source rate n/s (fixed source) for absolute units
@@ -814,10 +816,16 @@ class MainWindow(QMainWindow):
             self._load_results(result.statepoint)
             self._archive_run(result)
 
-    def _load_results(self, statepoint: str) -> None:
-        """Populate spectrum + flux/fission views from a finished run (defensive)."""
+    def _load_results(self, statepoint: str, cad_overlay=None) -> None:
+        """Populate spectrum + flux/fission views from a finished run (defensive).
+
+        ``cad_overlay`` = (stls, colors, labels): when given, the results are from a CAD
+        run and every field is rendered volumetrically on the semi-transparent geometry
+        rather than as a flat 2D slice."""
         from nbeast.core.results import Results
 
+        self._cad_result = cad_overlay is not None
+        self._cad_overlay = cad_overlay
         self._statepoint = statepoint
         self.last_diagnostics = None
         try:
@@ -895,6 +903,9 @@ class MainWindow(QMainWindow):
         """
         if not self._statepoint:
             return
+        if self._cad_result:   # CAD is 3-D — render volumetrically on the geometry
+            self._show_cad_field(score, switch_tab)
+            return
         from nbeast.core.results import Results
 
         tally_name, tally_score, label = self._field_source(score)
@@ -920,9 +931,43 @@ class MainWindow(QMainWindow):
         else:
             self._show_field(score, switch_tab=True)
 
+    def _show_cad_field(self, score: str, switch_tab: bool = True) -> None:
+        """Render a CAD result field as a 3-D volume on the semi-transparent geometry."""
+        if not self._statepoint:
+            return
+        import numpy as np
+
+        from nbeast.core.results import Results
+
+        base = score[:-8] if score.endswith("_rel_err") else score
+        if base == "dose":
+            name, tally_score = "dose_volume", "flux"
+        else:
+            name, tally_score = "flux_volume", ("flux" if base == "volume" else base)
+        try:
+            with Results(self._statepoint) as results:
+                mean, dims, lower, upper, rel = results.field_volume(tally_score, name)
+                scale = self._display_scale(results, score, name)
+            if score.endswith("_rel_err"):
+                values, log = rel, False
+            else:
+                values, log = np.asarray(mean, dtype=float) * scale, True
+            stls, colors, labels = self._cad_overlay or (None, None, None)
+            self.flux_view.show_field_volume(
+                values, dims, lower, upper, log=log, stls=stls, colors=colors, labels=labels,
+                bar_title=self._field_bar_title(score), title=FIELD_TITLES.get(score, score),
+            )
+            if switch_tab:
+                self.tabs.setCurrentWidget(self.flux_view)
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
+
     def _show_volume(self) -> None:
         """Publication-style 3D volume render of the flux field."""
         if not self._statepoint:
+            return
+        if self._cad_result:
+            self._show_cad_field("flux")
             return
         from nbeast.core.results import Results
 
@@ -1277,30 +1322,21 @@ class MainWindow(QMainWindow):
         )
         sp = res.get("statepoint")
         if sp and Path(sp).exists():
-            # Load through the normal results path so Convergence + the Results panel
-            # (spectrum, flux/dose/reaction maps, diagnostics) populate like any run.
+            # Load through the normal results path, tagged as CAD so every field renders
+            # volumetrically on the geometry (Convergence, spectrum, diagnostics too).
             self.last_result = RunResult(keff=res["keff"], keff_std=res["keff_std"], statepoint=sp)
-            self._load_results(sp)
+            overlay = (res.get("stls"), res.get("colors"), res.get("labels"))
+            self._load_results(sp, cad_overlay=overlay)
             self._replay_convergence(sp, 0)
+            self.tabs.setCurrentWidget(self.flux_view)
         elif res.get("energy_edges") and res.get("flux"):
             self.spectrum_view.set_spectrum(res["energy_edges"], res["flux"])
-
-        # Publication 3D volume render with the geometry overlay (the CAD headline).
-        # Switch to the viewport tab first so its GL widget is mapped before rendering.
-        if res.get("flux_volume") and res.get("vol_bounds"):
-            b = res["vol_bounds"]
-            self.tabs.setCurrentWidget(self.flux_view)
-            self.flux_view.show_field_volume(
-                res["flux_volume"], res["vol_dims"], (b[0], b[1], b[2]), (b[3], b[4], b[5]),
-                stls=res.get("stls"), colors=res.get("colors"), labels=res.get("labels"),
-                bar_title=self._field_bar_title("flux"), title="CAD scalar flux",
-            )
-        elif not sp and res.get("flux_map") and res.get("map_bounds"):
-            b = res["map_bounds"]
-            self.tabs.setCurrentWidget(self.flux_view)
-            self.flux_view.show_field_array(
-                res["flux_map"], (b[0], b[1]), (b[2], b[3]), title="CAD flux map"
-            )
+            if res.get("flux_map") and res.get("map_bounds"):
+                b = res["map_bounds"]
+                self.tabs.setCurrentWidget(self.flux_view)
+                self.flux_view.show_field_array(
+                    res["flux_map"], (b[0], b[1]), (b[2], b[3]), title="CAD flux map"
+                )
 
     def _open_cad_setup(self) -> None:
         from .cad_setup import CadSetupDialog

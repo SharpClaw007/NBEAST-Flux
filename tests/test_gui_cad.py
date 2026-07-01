@@ -61,6 +61,22 @@ def test_dialog_embeds_colour_coded_preview(qapp):
     dialog.close()
 
 
+def test_cad_results_render_volumetrically(qapp, tmp_path):
+    """CAD results route every field through the volumetric renderer (on the geometry),
+    not the flat 2D slice used for parametric templates."""
+    from nbeast.gui.main_window import MainWindow
+
+    win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "p")
+    win._statepoint = "sp.h5"
+    win._cad_result = True
+    routed = []
+    win._show_cad_field = lambda score, switch=True: routed.append(score)
+    for score in ("flux", "fission", "dose", "heating"):
+        win._show_field(score)
+    assert routed == ["flux", "fission", "dose", "heating"]
+    win.close()
+
+
 def test_viewport_finalize_is_idempotent(qapp):
     """finalize() releases the VTK interactor and is safe to call repeatedly / early —
     the dialog uses it on close to avoid a segfault when the embedded view is destroyed."""
