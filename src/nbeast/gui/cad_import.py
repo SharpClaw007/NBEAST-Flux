@@ -58,6 +58,7 @@ class CadImportDialog(QDialog):
         self._cross_sections = cross_sections
         self._thread = None
         self._worker = None
+        self._on_done_cb = None
         self._preview_stls = None
         self._preview_colors = None
 
@@ -142,19 +143,32 @@ class CadImportDialog(QDialog):
         self.status.setText(message)
 
     def _start(self, fn, on_done) -> None:
+        # The worker's `done`/`failed` signals MUST land on a bound method of this
+        # dialog (a main-thread QObject) so PySide delivers them QUEUED to the GUI
+        # thread. Connecting a bare lambda/free function instead makes a DIRECT
+        # connection that runs the callback — and its _teardown() — *on the worker
+        # thread*, which then destroys the still-running QThread and aborts the app.
+        self._on_done_cb = on_done
         self._thread = QThread()
         self._worker = _Worker(fn)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
-        self._worker.done.connect(on_done)
+        self._worker.done.connect(self._dispatch_done)
         self._worker.failed.connect(self._on_failed)
         self._thread.start()
+
+    @Slot(object)
+    def _dispatch_done(self, result) -> None:
+        cb, self._on_done_cb = self._on_done_cb, None
+        if cb is not None:
+            cb(result)
 
     def _teardown(self) -> None:
         if self._thread is not None:
             self._thread.quit()
             self._thread.wait()
         self._thread = self._worker = None
+        self._on_done_cb = None
 
     # ---- inspect ---------------------------------------------------------
     def _inspect(self) -> None:

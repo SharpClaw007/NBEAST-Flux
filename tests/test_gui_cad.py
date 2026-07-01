@@ -66,6 +66,34 @@ def test_cad_dialog_is_nonmodal_single_instance(qapp, tmp_path):
     assert win._cad_dialog is None
 
 
+def test_worker_callback_runs_on_main_thread(qapp):
+    """Regression: the 3D preview connected a lambda to the worker's `done` signal,
+    which PySide wired as a DIRECT connection — the callback (and its _teardown,
+    which waits on + destroys the thread) ran on the worker thread and aborted the
+    app with 'QThread: Destroyed while thread is still running'. Callbacks must run
+    on the GUI thread regardless of lambda vs. bound method."""
+    from PySide6.QtCore import QEventLoop, QThread, QTimer
+    from nbeast.gui.cad_import import CadImportDialog
+
+    dialog = CadImportDialog(cross_sections=None)
+    seen = {}
+    loop = QEventLoop()
+
+    def on_done(value):
+        seen["value"] = value
+        seen["on_main"] = QThread.currentThread() == qapp.thread()
+        dialog._teardown()          # the exact call that crashed off-main
+        loop.quit()
+
+    dialog._start(lambda: 42, lambda v: on_done(v))   # lambda on_done = old crash path
+    QTimer.singleShot(4000, loop.quit)                # safety net
+    loop.exec()
+
+    assert seen.get("value") == 42
+    assert seen.get("on_main") is True                # ran on the GUI thread → no abort
+    dialog.close()
+
+
 def test_setup_dialog_constructs(qapp):
     from nbeast.gui.cad_setup import CadSetupDialog
 
