@@ -89,8 +89,12 @@ class _ElementCell(QFrame):
     """One periodic-table box: atomic number, symbol, and an isotopes·materials count,
     tinted by install status. Clickable when the element has data."""
 
-    _BG = {"full": "#c8e6c9", "some": "#fff3b0", "none": "#eceff1", "disabled": "#f7f7f7"}
-    _BORDER = {"full": "#66bb6a", "some": "#ffca28", "none": "#b0bec5", "disabled": "#eeeeee"}
+    # Light cell backgrounds with explicitly dark text — self-contained, so the table
+    # reads the same in light or dark app themes (never inherits a light theme text colour).
+    # Data cells: opaque light backgrounds + dark text (readable in any theme). No-data
+    # cells: transparent, so they recede into whatever background (light or dark) is active.
+    _BG = {"full": "#bfe3c2", "some": "#ffdf80", "none": "#d7dee3", "disabled": "transparent"}
+    _BORDER = {"full": "#4caf50", "some": "#f5a623", "none": "#9fb0bc", "disabled": "#777777"}
 
     def __init__(self, z, symbol, count, status, enabled, on_click):
         super().__init__()
@@ -100,19 +104,21 @@ class _ElementCell(QFrame):
             f"_ElementCell{{background:{self._BG[status]};"
             f"border:1px solid {self._BORDER[status]};border-radius:3px;}}"
         )
+        sym_color = "#141414" if enabled else "#8a8a8a"
+        sub_color = "#3a3a3a" if enabled else "#7a7a7a"
         v = QVBoxLayout(self)
         v.setContentsMargins(2, 1, 2, 1)
         v.setSpacing(0)
         num = QLabel(str(z))
         num.setAlignment(Qt.AlignRight | Qt.AlignTop)
-        num.setStyleSheet("font-size:7px;color:#777;border:0;background:transparent;")
+        num.setStyleSheet(f"font-size:7px;color:{sub_color};border:0;background:transparent;")
         sym = QLabel(symbol)
         sym.setAlignment(Qt.AlignCenter)
-        sym.setStyleSheet("font-size:13px;font-weight:bold;border:0;background:transparent;"
-                          + ("" if enabled else "color:#c0c0c0;"))
+        sym.setStyleSheet(f"font-size:13px;font-weight:bold;color:{sym_color};"
+                          "border:0;background:transparent;")
         cnt = QLabel(count)
         cnt.setAlignment(Qt.AlignCenter)
-        cnt.setStyleSheet("font-size:8px;color:#555;border:0;background:transparent;")
+        cnt.setStyleSheet(f"font-size:8px;color:{sub_color};border:0;background:transparent;")
         v.addWidget(num)
         v.addWidget(sym)
         v.addWidget(cnt)
@@ -191,7 +197,6 @@ class DataLibraryDialog(QDialog):
 
         self.status = QLabel("")
         self.status.setWordWrap(True)
-        self.status.setStyleSheet("color: #555;")
         layout.addWidget(self.status)
 
         bottom = QHBoxLayout()
@@ -363,10 +368,12 @@ class DataLibraryDialog(QDialog):
 
         outer.addWidget(grid_widget)
         legend = QLabel(
-            "🟩 all isotopes installed   🟨 some installed   ⬜ available to download   ·   "
-            "each box: symbol + <b>isotopes·materials</b>. Click an element for details."
+            "<span style='background:#bfe3c2;color:#141414'>&nbsp;green&nbsp;</span> all isotopes "
+            "installed &nbsp; <span style='background:#ffdf80;color:#141414'>&nbsp;amber&nbsp;</span> "
+            "some installed &nbsp; <span style='background:#d7dee3;color:#141414'>&nbsp;grey&nbsp;</span> "
+            "available to download &nbsp;·&nbsp; each box: symbol + <b>isotopes·materials</b>. "
+            "Click an element for details."
         )
-        legend.setStyleSheet("color:#555;")
         legend.setWordWrap(True)
         outer.addWidget(legend)
         outer.addStretch(1)
