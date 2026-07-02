@@ -24,7 +24,10 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROJECT_VERSION = 1
+# v2 adds `studies` (persistent analyses — configs + result references). Reading is
+# tolerant: a v1 manifest simply has no studies, so it opens as an empty list — old
+# projects migrate transparently and are rewritten as v2 on the next save.
+PROJECT_VERSION = 2
 _MANIFEST = "project.json"
 _RUNS_DIR = "runs"
 _STATEPOINT_NAME = "statepoint.h5"
@@ -91,6 +94,7 @@ class Project:
         self.material_values: dict[str, dict] = {}   # per-template role -> material key
         self.settings: dict = {}            # batches / particles / seed (last used)
         self.runs: list[RunRecord] = []
+        self.studies: list[dict] = []       # persistent analyses (schema v2)
 
     # ---- construction -----------------------------------------------------
     @property
@@ -126,6 +130,7 @@ class Project:
         proj.material_values = data.get("material_values", {}) or {}
         proj.settings = data.get("settings", {}) or {}
         proj.runs = [RunRecord.from_dict(r) for r in data.get("runs", [])]
+        proj.studies = list(data.get("studies", []) or [])   # absent in v1 manifests
         return proj
 
     @classmethod
@@ -146,6 +151,7 @@ class Project:
             "material_values": self.material_values,
             "settings": self.settings,
             "runs": [r.to_dict() for r in self.runs],
+            "studies": list(self.studies),
         }
 
     def save(self) -> Path:

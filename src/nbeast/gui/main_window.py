@@ -84,7 +84,8 @@ class MainWindow(QMainWindow):
                  project_dir: str | Path | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("NBEAST — neutron-flux Monte Carlo")
-        self.resize(1100, 720)
+        self.resize(1440, 900)
+        self._restore_window_state()
 
         if run_root is not None:
             self._run_root = Path(run_root)
@@ -92,13 +93,14 @@ class MainWindow(QMainWindow):
         else:
             self._run_root = Path(tempfile.gettempdir()) / "nbeast"
             default_project = Path.home() / ".nbeast" / "default-project"
-        self._template = next(iter(specs.SPECS))  # "Pin cell"
-        # Per-template current parameter values, initialised from defaults.
-        self._param_values = {label: spec.defaults() for label, spec in specs.SPECS.items()}
-        # Per-template material selections (role key -> material catalog key).
-        self._material_values = {
-            label: spec.material_defaults() for label, spec in specs.SPECS.items()
-        }
+        # The document: single source of truth for template/params/materials, with
+        # the undo stack. MainWindow's _template/_param_values/_material_values are
+        # delegating properties so existing code and tests keep working.
+        from .document import Document
+
+        self.doc = Document(self)
+        self.doc.param_changed.connect(self._on_doc_param_changed)
+        self.doc.material_changed.connect(self._on_doc_material_changed)
         # Custom-CAD template state (populated by the CAD import dialog).
         self._cad = {"step": None, "materials": []}
         self._cad_dialog = None   # the non-modal CAD import panel, when open
@@ -165,6 +167,15 @@ class MainWindow(QMainWindow):
             setup_action = QAction("Set up CAD geometry support…", self)
             setup_action.triggered.connect(self._open_cad_setup)
             file_menu.addAction(setup_action)
+
+        edit_menu = self.menuBar().addMenu("&Edit")
+        undo_action = self.doc.undo_stack.createUndoAction(self, "Undo")
+        undo_action.setShortcut("Ctrl+Z")                 # ⌘Z on macOS
+        redo_action = self.doc.undo_stack.createRedoAction(self, "Redo")
+        redo_action.setShortcut("Ctrl+Shift+Z")           # ⇧⌘Z on macOS
+        edit_menu.addAction(undo_action)
+        edit_menu.addAction(redo_action)
+        self.doc.undo_stack.indexChanged.connect(self._on_undo_redo)
 
         examples_menu = self.menuBar().addMenu("&Examples")
         for label, key in (
@@ -355,6 +366,38 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.spectrum_view, "Spectrum")
         self.setCentralWidget(self.tabs)
 
+    # ---- document delegation ------------------------------------------------
+    # State lives on self.doc; these properties keep the historical attribute names
+    # working across the codebase and test suite.
+    @property
+    def _template(self) -> str:
+        return self.doc.template
+
+    @_template.setter
+    def _template(self, name: str) -> None:
+        self.doc.set_template(name)
+
+    @property
+    def _param_values(self) -> dict:
+        return self.doc.param_values
+
+    @property
+    def _material_values(self) -> dict:
+        return self.doc.material_values
+
+    def _on_doc_param_changed(self, _template: str, _key: str) -> None:
+        self._refresh_tree()
+
+    def _on_doc_material_changed(self, _template: str, _key: str) -> None:
+        self._refresh_tree()
+
+    def _on_undo_redo(self, _idx: int) -> None:
+        """After undo/redo, re-render the open editor so its widgets show the
+        restored values (the tree refreshes via the doc signals)."""
+        item = self.model_tree.currentItem()
+        if item is not None:
+            self._on_tree_click(item, 0)
+
     # ---- model tree -------------------------------------------------------
     @property
     def spec(self):
@@ -394,9 +437,9 @@ class MainWindow(QMainWindow):
         )
 
     def set_param(self, key: str, value: float) -> None:
-        """Programmatic + UI entry point for editing a parameter."""
-        self._param_values[self._template][key] = value
-        self._refresh_tree()  # reflect new value in the tree (not Properties — keep editor focus)
+        """Programmatic + UI entry point for editing a parameter (undoable). The tree
+        refreshes via the document signal (not Properties — keep editor focus)."""
+        self.doc.edit_param(key, value)
 
     # ---- display units ----------------------------------------------------
     def _absolute_units(self) -> bool:
@@ -705,8 +748,7 @@ class MainWindow(QMainWindow):
     def _on_material_selected(self, role_key: str, mat_key) -> None:
         if not mat_key:
             return
-        self._material_values[self._template][role_key] = mat_key
-        self._refresh_tree()
+        self.doc.edit_material(role_key, mat_key)   # undoable; tree refreshes via signal
         mspec = materials.LIBRARY.get(mat_key)
         if mspec and not mspec.is_available(materials.available_names(self._cross_sections)):
             self._offer_data_download(mspec)
@@ -1527,9 +1569,35 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Report exported to {out_dir}")
         return out_dir
 
+    # ---- window state (geometry/layout persist across launches) -------------
+    @staticmethod
+    def _qsettings():
+        from PySide6.QtCore import QSettings
+
+        return QSettings("NBEAST", "NBEAST")
+
+    def _restore_window_state(self) -> None:
+        try:
+            s = self._qsettings()
+            geometry = s.value("window/geometry")
+            if geometry is not None:
+                self.restoreGeometry(geometry)
+        except Exception:  # noqa: BLE001 — never block startup on prefs
+            pass
+
+    def _save_window_state(self) -> None:
+        try:
+            s = self._qsettings()
+            s.setValue("window/geometry", self.saveGeometry())
+            s.setValue("window/state", self.saveState())
+        except Exception:  # noqa: BLE001
+            pass
+
     def closeEvent(self, event) -> None:
-        # Remember the current model, and don't leave a worker subprocess running.
+        # Remember the current model + window layout, and don't leave a worker
+        # subprocess running.
         self._persist_state()
+        self._save_window_state()
         self.controller.stop_and_wait()
         if getattr(self, "_cad_dialog", None) is not None:
             self._cad_dialog.close()
