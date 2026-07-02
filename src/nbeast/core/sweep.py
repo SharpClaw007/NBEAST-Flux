@@ -8,11 +8,20 @@ tested without nuclear data: the GUI drives the actual transport runs and feeds 
 results back in.
 
 * :func:`sweep_values` — the list of parameter values for a sweep (linear or log).
-* :class:`CriticalitySearch` — a robust root finder that proposes the next parameter
-  value to try and consumes the resulting k, converging on k = target (default 1.0).
-  It uses bracketing false-position (regula falsi) with automatic bracket expansion,
-  which only assumes k is monotonic in the parameter — true for the cases that matter
-  (radius, enrichment, pitch near the critical point).
+* :class:`CriticalitySearch` — a robust, **statistics-aware** root finder that proposes
+  the next parameter value to try and consumes the resulting ``(k, σ)``, converging on
+  k = target (default 1.0). Every k from Monte Carlo is noisy, so the search:
+
+  - only accepts a bracket when both endpoints differ from the target by more than
+    their own 1σ (a sign flip inside the noise is not a root);
+  - uses Illinois-variant false position (plain regula falsi retains a stale endpoint
+    on convex curves) with a bisection fallback;
+  - gates convergence on ``|k − target| ≤ max(tol_k, 2σ)`` *and* a localized root
+    (bracket), so a single noisy near-target point can't stop the search;
+  - asks the driver for more particles as the bracket narrows
+    (:meth:`particles_factor`), shrinking σ in step with the interval;
+  - reports the answer as an **interval** — :meth:`estimate` ± :meth:`estimate_std`,
+    the endpoint σ propagated through the false-position slope.
 """
 
 from __future__ import annotations
@@ -39,8 +48,9 @@ def sweep_values(lo: float, hi: float, n: int, *, log: bool = False) -> list[flo
 
 @dataclass(frozen=True)
 class SearchPoint:
-    x: float   # parameter value
-    k: float   # resulting k-effective
+    x: float          # parameter value
+    k: float          # resulting k-effective
+    std: float = 0.0  # 1-sigma Monte Carlo uncertainty on k
 
 
 class CriticalitySearch:
@@ -50,15 +60,23 @@ class CriticalitySearch:
 
         s = CriticalitySearch(lo, hi, target=1.0)
         while (x := s.propose()) is not None:
-            k = run_and_get_keff(x)
-            s.submit(x, k)
-        print(s.solution)
+            k, std = run_and_get_keff(x, particles=base * s.particles_factor())
+            s.submit(x, k, std)
+        print(s.solution)   # includes x, x_std — quote the interval, not the number
 
     The bracket ``[lo, hi]`` is evaluated first. If those two points already straddle
-    the target, false position homes in on the root; otherwise the bracket is expanded
-    outward (assuming monotonicity) until it does or until ``[x_min, x_max]`` / the
-    evaluation budget is exhausted.
+    the target *significantly* (beyond their 1σ), Illinois false position homes in on
+    the root; otherwise the bracket is expanded outward (assuming monotonicity) until
+    it does or until ``[x_min, x_max]`` / the evaluation budget is exhausted.
+
+    ``tol_k`` defaults to 200 pcm — deliberately the same level at which the run
+    diagnostics (:data:`nbeast.core.results._KEFF_PCM_WARN`) call a k-eff
+    "statistically weak": the search must not claim convergence finer than the level
+    the rest of the tool treats as noise.
     """
+
+    #: convergence claims require |k − target| ≤ max(tol_k, SIGMA_GATE·σ)
+    SIGMA_GATE = 2.0
 
     def __init__(
         self,
@@ -66,11 +84,12 @@ class CriticalitySearch:
         hi: float,
         *,
         target: float = 1.0,
-        tol_k: float = 1.5e-3,
+        tol_k: float = 2.0e-3,
         tol_x: float | None = None,
         max_evals: int = 12,
         x_min: float | None = None,
         x_max: float | None = None,
+        max_particles_factor: int = 16,
     ):
         if hi == lo:
             raise ValueError("search bracket must have nonzero width")
@@ -82,10 +101,18 @@ class CriticalitySearch:
         self.max_evals = int(max_evals)
         self.x_min = float(x_min) if x_min is not None else None
         self.x_max = float(x_max) if x_max is not None else None
+        self.max_particles_factor = int(max_particles_factor)
         self.points: list[SearchPoint] = []
-        self._failed = False  # ran out of room to bracket within bounds
+        self._failed = False           # ran out of room to bracket within bounds
+        self._bracket: tuple[SearchPoint, SearchPoint] | None = None  # a.x < b.x
+        self._stale = [0, 0]           # Illinois: consecutive retentions of (a, b)
 
-    # ---- clamping ---------------------------------------------------------
+    # ---- statistics ---------------------------------------------------------
+    def _significant(self, p: SearchPoint) -> bool:
+        """Is this point's k statistically distinguishable from the target (>1σ)?"""
+        return abs(p.k - self.target) > p.std
+
+    # ---- clamping -----------------------------------------------------------
     def _clamp(self, x: float) -> float:
         if self.x_min is not None:
             x = max(self.x_min, x)
@@ -96,7 +123,7 @@ class CriticalitySearch:
     def _already_evaluated(self, x: float) -> bool:
         return any(abs(p.x - x) <= self.tol_x for p in self.points)
 
-    # ---- stepping ---------------------------------------------------------
+    # ---- stepping -----------------------------------------------------------
     def propose(self) -> float | None:
         """The next parameter value to evaluate, or None when finished."""
         if self.converged or self._failed or len(self.points) >= self.max_evals:
@@ -113,25 +140,72 @@ class CriticalitySearch:
             return None
         return x
 
-    def submit(self, x: float, k: float) -> None:
-        self.points.append(SearchPoint(float(x), float(k)))
+    def particles_factor(self) -> int:
+        """Suggested multiplier on the per-run particle count for the *next* run.
+
+        1 until a bracket exists (survey phase: cheap runs are fine). Once the search
+        is homing in, statistics must keep pace with the shrinking interval: to gate
+        convergence at tol_k, σ(k) needs to reach ~tol_k/2, and σ scales as
+        1/√particles — so the factor is (σ_last / (tol_k/2))², capped.
+        """
+        if self._bracket is None or not self.points:
+            return 1
+        std = self.points[-1].std
+        if std <= 0:
+            return 1
+        factor = math.ceil((std / (self.tol_k / 2.0)) ** 2)
+        return max(1, min(self.max_particles_factor, factor))
+
+    def submit(self, x: float, k: float, std: float = 0.0) -> None:
+        point = SearchPoint(float(x), float(k), max(float(std), 0.0))
+        self.points.append(point)
+        self._update_bracket(point)
+
+    def _update_bracket(self, p: SearchPoint) -> None:
+        t = self.target
+        if self._bracket is None:
+            # Look for the tightest adjacent pair that *significantly* straddles the
+            # target — a sign change within the endpoints' noise is not a bracket.
+            pts = sorted(self.points, key=lambda q: q.x)
+            best = None
+            for a, b in zip(pts, pts[1:]):
+                if ((a.k - t) * (b.k - t) < 0
+                        and self._significant(a) and self._significant(b)):
+                    if best is None or (b.x - a.x) < (best[1].x - best[0].x):
+                        best = (a, b)
+            if best is not None:
+                self._bracket = best
+                self._stale = [0, 0]
+            return
+
+        a, b = self._bracket
+        if not (a.x < p.x < b.x) or not self._significant(p):
+            return  # outside, or statistically indistinguishable from the target
+        if (p.k - t) * (a.k - t) > 0:      # same side as a → replace a; b is retained
+            self._bracket = (p, b)
+            self._stale = [0, self._stale[1] + 1]
+        else:
+            self._bracket = (a, p)
+            self._stale = [self._stale[0] + 1, 0]
 
     def _next_guess(self) -> float | None:
-        pts = sorted(self.points, key=lambda p: p.x)
         t = self.target
-
-        # A sign change between adjacent points => bracketed; false position.
-        for a, b in zip(pts, pts[1:]):
-            da, db = a.k - t, b.k - t
-            if da == 0:
-                return None  # exact hit already recorded
-            if da * db < 0:
-                # regula falsi root of the linear interpolant between a and b
-                x = a.x + da * (a.x - b.x) / (db - da)
-                return self._clamp(x)
+        if self._bracket is not None:
+            a, b = self._bracket
+            # Illinois false position: halve the *retained* endpoint's residual
+            # (stale[0] counts consecutive retentions of a, stale[1] of b) so a
+            # convex k(x) can't pin one endpoint forever.
+            da = (a.k - t) * (0.5 ** self._stale[0])
+            db = (b.k - t) * (0.5 ** self._stale[1])
+            x = (a.x * db - b.x * da) / (db - da)
+            if not self._already_evaluated(x):
+                return x
+            mid = 0.5 * (a.x + b.x)     # bisection fallback keeps making progress
+            return None if self._already_evaluated(mid) else mid
 
         # Not bracketed: expand outward in the direction that moves k toward target,
         # assuming monotonic k(x) (slope from the two extreme points).
+        pts = sorted(self.points, key=lambda p: p.x)
         p0, pN = pts[0], pts[-1]
         if pN.x == p0.x:
             return None
@@ -149,19 +223,31 @@ class CriticalitySearch:
             return None
         return x
 
-    # ---- results ----------------------------------------------------------
+    # ---- results ------------------------------------------------------------
+    @property
+    def bracketed(self) -> bool:
+        return self._bracket is not None
+
     @property
     def converged(self) -> bool:
         if not self.points:
             return False
-        if abs(self.points[-1].k - self.target) <= self.tol_k:
+        p = self.points[-1]
+        miss = abs(p.k - self.target)
+        # A clean hit: within tol_k with statistics at least as tight as tol_k. This
+        # is the only way to converge unbracketed (e.g. an exact deterministic hit).
+        if miss <= self.tol_k and p.std <= self.tol_k:
             return True
-        # A tight bracket around the target also counts as converged.
-        pts = sorted(self.points, key=lambda p: p.x)
-        for a, b in zip(pts, pts[1:]):
-            if (a.k - self.target) * (b.k - self.target) < 0 and (b.x - a.x) <= self.tol_x:
-                return True
-        return False
+        if self._bracket is None:
+            return False
+        # Localized root + last point within statistics of the target: more runs at
+        # this quality cannot resolve further — converged *within statistics*, and the
+        # answer is quoted as an interval.
+        if miss <= max(self.tol_k, self.SIGMA_GATE * p.std):
+            return True
+        # A tight significant bracket also counts.
+        a, b = self._bracket
+        return (b.x - a.x) <= self.tol_x
 
     def best(self) -> SearchPoint | None:
         """The evaluated point whose k is closest to the target."""
@@ -172,38 +258,43 @@ class CriticalitySearch:
     def estimate(self) -> float | None:
         """Best estimate of the critical parameter value.
 
-        Uses the false-position root of the tightest straddling bracket when one
-        exists (sub-grid accuracy), else the closest evaluated point.
+        The false-position root of the current significant bracket when one exists
+        (sub-grid accuracy), else the closest evaluated point.
         """
-        if not self.points:
-            return None
-        pts = sorted(self.points, key=lambda p: p.x)
-        t = self.target
-        best_pair = None
-        for a, b in zip(pts, pts[1:]):
-            if (a.k - t) * (b.k - t) < 0:
-                width = b.x - a.x
-                if best_pair is None or width < best_pair[0]:
-                    root = a.x + (a.k - t) * (a.x - b.x) / ((b.k - t) - (a.k - t))
-                    best_pair = (width, root)
-        if best_pair is not None:
-            return best_pair[1]
+        if self._bracket is not None:
+            a, b = self._bracket
+            da, db = a.k - self.target, b.k - self.target
+            return (a.x * db - b.x * da) / (db - da)
         bp = self.best()
         return bp.x if bp else None
+
+    def estimate_std(self) -> float | None:
+        """1σ uncertainty on :meth:`estimate`, from the bracket endpoints' k-noise
+        propagated through the false-position linear interpolant:
+        ∂x*/∂k_a = L·d_b/Δ², ∂x*/∂k_b = −L·d_a/Δ² with L = a.x − b.x, Δ = d_b − d_a.
+        None when no bracket exists (an unlocalized root has no defensible interval).
+        """
+        if self._bracket is None:
+            return None
+        a, b = self._bracket
+        da, db = a.k - self.target, b.k - self.target
+        delta = db - da
+        if delta == 0:
+            return None
+        length = a.x - b.x
+        var = (length / delta ** 2) ** 2 * (db ** 2 * a.std ** 2 + da ** 2 * b.std ** 2)
+        return math.sqrt(var)
 
     @property
     def solution(self) -> dict:
         bp = self.best()
         return {
             "x": self.estimate(),
+            "x_std": self.estimate_std(),
             "k": bp.k if bp else None,
             "target": self.target,
             "converged": self.converged,
-            "bracketed": self.estimate() is not None and any(
-                (a.k - self.target) * (b.k - self.target) < 0
-                for a, b in zip(sorted(self.points, key=lambda p: p.x),
-                                sorted(self.points, key=lambda p: p.x)[1:])
-            ),
+            "bracketed": self.bracketed,
             "n_evals": len(self.points),
-            "points": [(p.x, p.k) for p in self.points],
+            "points": [(p.x, p.k, p.std) for p in self.points],
         }

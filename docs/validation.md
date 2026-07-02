@@ -90,6 +90,22 @@ in an *infinite* pin lattice, both of which raise the worth relative to a leaky
 operating core. Choosing a finite operating flux in the dialog brings Xe down toward
 the typical range. Poisoning needs a Xe-135/Sm-149 download (not in the bundle).
 
+### Criticality search statistics
+
+Every k from Monte Carlo is noisy, so the criticality search treats it that way. Each
+evaluation's σ(k) travels with it: a sign change between two points only counts as a
+bracket when both endpoints differ from the target by more than their own 1σ (a flip
+inside the noise is not a root); convergence is gated at
+|k − target| ≤ max(200 pcm, 2σ) **and** a localized (bracketed) root — 200 pcm being the
+same threshold the run diagnostics use for "statistically weak", so the search cannot
+claim finer convergence than the rest of the tool trusts. Once bracketed, the per-run
+particle count is automatically scaled (up to 16×) so σ shrinks in step with the
+interval, and the answer is reported as **x ± σₓ** with the endpoint noise propagated
+through the false-position slope. End-to-end check on the Godiva radius with
+deliberately cheap runs (σ(k) ≈ 400 pcm): the search brackets, refines at 16×
+particles, and returns **r_crit = 8.732 ± 0.010 cm** against the benchmark 8.7407 cm —
+the true root inside the quoted interval.
+
 ### Absolute-unit normalization
 
 Result maps are per source neutron by default (relative). Given a reactor power, they

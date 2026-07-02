@@ -65,12 +65,17 @@ class _SweepWorker(QObject):
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
 
-    def _evaluate(self, x: float, index: int) -> tuple[float, float] | None:
+    def _evaluate(self, x: float, index: int, quality: int = 1) -> tuple[float, float] | None:
         """Evaluate k at one parameter value, or None if it couldn't be run (an
-        invalid configuration builds/fails without killing the whole sweep)."""
+        invalid configuration builds/fails without killing the whole sweep).
+        ``quality`` multiplies the per-run particle count (variance-aware search
+        refinement); builders that don't take it are called plain."""
         try:
             self._runner = Runner(cross_sections=self._cross_sections)
-            model = self._builder(x)
+            try:
+                model = self._builder(x, quality) if quality > 1 else self._builder(x)
+            except TypeError:
+                model = self._builder(x)
             result = self._runner.run(model, self._run_root / f"pt{index:03d}")
         except Exception as exc:  # noqa: BLE001 — bad config for this point only
             self.progress.emit(f"Skipped {x:g}: {exc}")
@@ -102,13 +107,17 @@ class _SweepWorker(QObject):
             x = search.propose()
             if x is None:
                 break
-            self.progress.emit(f"Search eval {i + 1}: {x:g}")
-            ev = self._evaluate(x, i)
+            quality = search.particles_factor()   # variance-aware: σ shrinks with bracket
+            self.progress.emit(
+                f"Search eval {i + 1}: {x:g}"
+                + (f" (particles ×{quality})" if quality > 1 else "")
+            )
+            ev = self._evaluate(x, i, quality)
             if ev is None:
                 failed = not self._stop  # an unevaluable point breaks the search
                 break
             k, std = ev
-            search.submit(x, k)
+            search.submit(x, k, std)               # σ travels with k — never discarded
             self.point.emit(x, k, std)
             i += 1
         summary = dict(search.solution)
@@ -388,10 +397,10 @@ class SweepDialog(QDialog):
         inactive = _inactive_for(batches)
         seed = main.seed_spin.value()
 
-        def builder(x: float):
+        def builder(x: float, quality: int = 1):
             params = dict(base)
             params[p.key] = int(round(x)) if p.kind == "int" else x
-            return spec.build(batches=batches, particles=particles,
+            return spec.build(batches=batches, particles=particles * int(quality),
                               inactive=inactive, seed=seed, **mats, **params)
 
         return builder
@@ -456,18 +465,24 @@ class SweepDialog(QDialog):
         self.export_btn.setEnabled(bool(self._points))
         if summary.get("mode") == "search":
             x = summary.get("x")
+            x_std = summary.get("x_std")
             self._critical_value = x
             p = self._current_param()
+            # A Monte Carlo answer is an interval, not a number: quote x ± σₓ (the
+            # bracket endpoints' k-noise propagated through the false-position slope).
+            interval = f"{x:.4f} ± {x_std:.4f}" if (x is not None and x_std) else (
+                f"{x:.4f}" if x is not None else None)
             if x is not None and summary.get("converged"):
                 self.apply_btn.setEnabled(True)
                 self.status.setText(
-                    f"Critical {p.label} ≈ {x:.4f} {p.unit} for k = {summary.get('target'):.4f} "
-                    f"({summary.get('n_evals')} evaluations)"
+                    f"Critical {p.label} = {interval} {p.unit} for k = "
+                    f"{summary.get('target'):.4f} ({summary.get('n_evals')} evaluations)"
+                    + ("" if summary.get("bracketed") else " — root not bracketed")
                 )
             elif x is not None:
                 self.apply_btn.setEnabled(True)
                 self.status.setText(
-                    f"Did not fully converge — best estimate {p.label} ≈ {x:.4f} {p.unit} "
+                    f"Did not fully converge — best estimate {p.label} ≈ {interval} {p.unit} "
                     f"after {summary.get('n_evals')} evaluations."
                 )
             else:
