@@ -130,6 +130,7 @@ class MainWindow(QMainWindow):
         self._build_docks()
         self._build_central()
         self._restore_from_project()
+        self._sanitize_material_values()
         self.statusBar().showMessage("Ready")
         self._refresh_tree()
         self._refresh_history()
@@ -188,6 +189,18 @@ class MainWindow(QMainWindow):
         "shield": ("Shield slab", {}, "Standard",
                    "Water shield — watch flux & dose attenuate through the slab."),
     }
+
+    def _sanitize_material_values(self) -> None:
+        """Drop stale material selections — a persisted key not in the current LIBRARY
+        (e.g. an auto element material like 'element_Pu' whose data is no longer active)
+        would otherwise crash the tree/build. Revert such a role to its template default."""
+        from nbeast.core import specs
+
+        for template, roles in self._material_values.items():
+            defaults = specs.SPECS[template].material_defaults() if template in specs.SPECS else {}
+            for role_key, mat_key in list(roles.items()):
+                if mat_key not in materials.LIBRARY:
+                    roles[role_key] = defaults.get(role_key, mat_key)
 
     def load_example(self, key: str) -> None:
         template, overrides, quality, hint = self._EXAMPLES[key]
@@ -489,7 +502,8 @@ class MainWindow(QMainWindow):
         materials_item = QTreeWidgetItem(["Materials"])
         for role in spec.material_roles:
             mat_key = self._material_values[self._template][role.key]
-            mat_label = materials.LIBRARY[mat_key].label
+            spec_obj = materials.LIBRARY.get(mat_key)
+            mat_label = spec_obj.label if spec_obj else f"{mat_key} (unavailable)"
             materials_item.addChild(QTreeWidgetItem([f"{role.label}: {mat_label}"]))
         for p in spec.params_in("Materials"):
             materials_item.addChild(QTreeWidgetItem([self._value_text(p)]))
@@ -764,8 +778,8 @@ class MainWindow(QMainWindow):
         avail = materials.available_names(self._cross_sections)
         out = []
         for role in self.spec.material_roles:
-            mspec = materials.LIBRARY[self._material_values[self._template][role.key]]
-            if not mspec.is_available(avail):
+            mspec = materials.LIBRARY.get(self._material_values[self._template][role.key])
+            if mspec is None or not mspec.is_available(avail):
                 out.append((role, mspec))
         return out
 
@@ -777,7 +791,7 @@ class MainWindow(QMainWindow):
             return
         missing = self._unavailable_materials()
         if missing:
-            names = ", ".join(m.label for _, m in missing)
+            names = ", ".join((m.label if m else r.label) for r, m in missing)
             self.statusBar().showMessage(
                 f"Can't run — {names} need cross-section data. "
                 "Download it via File ▸ Data library…"
@@ -1447,6 +1461,7 @@ class MainWindow(QMainWindow):
         self._cross_sections = path
         # Downloaded elements become selectable materials; refresh the dropdowns now.
         materials.refresh_auto_materials(path, self._starter_xml)
+        self._sanitize_material_values()   # drop any now-unavailable auto-material selection
         if getattr(self, "_template", None):
             self._render_materials_editors()
         self.statusBar().showMessage(f"Active cross-section library: {path}")

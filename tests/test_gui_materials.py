@@ -100,6 +100,22 @@ def test_downloaded_element_appears_in_material_dropdown(qapp, tmp_path):
     win.close()
 
 
+def test_stale_auto_material_selection_is_sanitized(qapp, tmp_path):
+    """A persisted auto element material whose data isn't in the active library (e.g.
+    'element_Pu' saved, then Pu removed) must revert to the role default, not crash the
+    tree/build on the missing LIBRARY key."""
+    from nbeast.core import materials
+
+    win = _win(tmp_path)
+    win.set_template("Pin cell")
+    win._material_values["Pin cell"]["fuel"] = "element_Pu"   # stale (no Pu in bundle)
+    assert "element_Pu" not in materials.LIBRARY
+    win._sanitize_material_values()
+    assert win._material_values["Pin cell"]["fuel"] == "uo2"   # reverted to default
+    win._refresh_tree()                                        # must not raise
+    win.close()
+
+
 def test_data_library_category_for_material(qapp, tmp_path):
     """A needs-data material opens the Data Library scrolled to its category."""
     from nbeast.core import materials
