@@ -38,7 +38,7 @@ def test_mainwindow_constructs(qapp):
     win = MainWindow()
     assert win.windowTitle()
     assert win.model_tree.model_group_names() == ["Materials", "Geometry", "Settings"]
-    assert win.tabs.count() == 3  # Convergence + Flux map + Spectrum
+    assert win.tabs.count() == 4  # Geometry + Convergence + Flux map + Spectrum
 
     win.set_template("Godiva")
     # Godiva has a single material plus the editable temperature -> two children.

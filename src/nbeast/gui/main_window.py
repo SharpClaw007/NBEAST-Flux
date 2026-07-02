@@ -177,7 +177,7 @@ class MainWindow(QMainWindow):
         self.doc.undo_stack.indexChanged.connect(self._on_undo_redo)
 
         view_menu = self.menuBar().addMenu("&View")
-        for i, label in enumerate(("Convergence", "Flux map", "Spectrum"), start=1):
+        for i, label in enumerate(("Geometry", "Convergence", "Flux map", "Spectrum"), start=1):
             action = QAction(label, self)
             action.setShortcut(f"Ctrl+{i}")
             action.triggered.connect(lambda _c=False, idx=i - 1: self.tabs.setCurrentIndex(idx))
@@ -365,10 +365,14 @@ class MainWindow(QMainWindow):
         pane_layout.addWidget(self.properties, 1)
 
         # -- right: viewport tabs over the messages strip --------------------------
+        from .geometry_view import GeometryView
+
         self.tabs = QTabWidget()
+        self.geometry_view = GeometryView()
         self.monitor = ConvergenceMonitor()
         self.flux_view = FluxViewport()
         self.spectrum_view = SpectrumView()
+        self.tabs.addTab(self.geometry_view, "Geometry")
         self.tabs.addTab(self.monitor, "Convergence")
         self.tabs.addTab(self.flux_view, "Flux map")
         self.tabs.addTab(self.spectrum_view, "Spectrum")
@@ -391,6 +395,18 @@ class MainWindow(QMainWindow):
         self._rebuild_results_list()
         self.model_tree.set_results_enabled(False)
         self._update_analysis_availability()
+
+        # Live geometry preview: any document change refreshes it (debounced so
+        # spin-drags repaint once, not per tick). The Geometry tab is the default view.
+        from PySide6.QtCore import QTimer
+
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(150)
+        self._preview_timer.timeout.connect(self._refresh_geometry_preview)
+        self.doc.changed.connect(self._preview_timer.start)
+        self._refresh_geometry_preview()
+        self.tabs.setCurrentWidget(self.geometry_view)
 
     # ---- document delegation ------------------------------------------------
     # State lives on self.doc; these properties keep the historical attribute names
@@ -488,6 +504,7 @@ class MainWindow(QMainWindow):
     def _on_units_changed(self, index: int) -> None:
         self._unit_system = "US" if index == 1 else "SI"
         self._refresh_tree()
+        self._refresh_geometry_preview()
         item = self.model_tree.currentItem()
         kind = self.model_tree.node_kind(item) if item is not None else None
         if kind and kind[0] == "group":   # re-render an open editor in the new unit
@@ -557,6 +574,28 @@ class MainWindow(QMainWindow):
             val = f"{self._power_w:g} W" if self._power_w > 0 else "relative (per source n)"
             settings.addChild(QTreeWidgetItem([f"reactor power = {val}"]))
         return settings
+
+    def _refresh_geometry_preview(self) -> None:
+        """Rebuild the pre-run geometry preview from the current document state."""
+        if not hasattr(self, "geometry_view"):
+            return
+        if self._is_cad:
+            step = self._cad.get("step")
+            self.geometry_view.set_hint(
+                f"CAD geometry: {os.path.basename(step)} — the import dialog shows the "
+                "colour-coded 3D preview." if step else
+                "Custom CAD — click Run (or Model ▸ Geometry) to import a STEP file.")
+            return
+        from nbeast.core import render_geometry
+
+        preview = render_geometry.preview(
+            self._template, self._param_values.get(self._template, {}),
+            self._material_values.get(self._template, {}))
+        if preview is None:
+            self.geometry_view.set_hint("No preview for this template.")
+            return
+        self.geometry_view.set_preview(
+            preview, self._unit_system, materials.available_names(self._cross_sections))
 
     def _refresh_tree(self) -> None:
         self._update_analysis_availability()
