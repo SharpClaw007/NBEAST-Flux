@@ -141,7 +141,13 @@ class Results:
         (``<label>`` or ``<label>_rel_err``). ``name`` picks the tally (e.g.
         ``dose_mesh``); ``label`` overrides the array name (e.g. read ``flux`` from
         the dose tally but store it as ``dose``). ``scale`` multiplies the mean (used
-        for power/unit normalization; the relative error is unaffected)."""
+        for power/unit normalization; the per-cell relative error is written unchanged).
+
+        Note: for an *absolute* map (``scale`` from a source rate), the written per-cell
+        relative error is the tally's own — it does NOT include the source-rate's
+        relative σ (:meth:`source_rate_rel_err`), which is common to every cell. That
+        term is small (the whole-geometry κ-fission tally converges well); fold it in
+        quadrature with the per-cell error if a fully-propagated bar is needed."""
         tally = self._sp.get_tally(name=name)
         mesh = tally.find_filter(openmc.MeshFilter).mesh
         mean, _std, rel = self.field_values(score, name)
@@ -184,6 +190,21 @@ class Results:
         except (LookupError, KeyError):
             return None
         return energy if energy > 0.0 else None
+
+    def source_rate_rel_err(self):
+        """Relative 1σ of the power-normalization source rate — i.e. of the whole-
+        geometry ``kappa-fission`` tally. The absolute-unit maps scale per-cell means by
+        this source rate, which is itself a (well-converged) tally estimate; this is the
+        common relative error to fold, in quadrature, into every absolute map's error
+        bar. ``field_to_vtk`` leaves the per-cell relative errors as-is (see its note),
+        so callers wanting fully-propagated absolute error bars combine the two here."""
+        try:
+            tally = self._sp.get_tally(name="power_norm")
+            mean = float(tally.get_values(scores=["kappa-fission"]).sum())
+            std = float(tally.get_values(scores=["kappa-fission"], value="std_dev").sum())
+        except (LookupError, KeyError):
+            return None
+        return (std / mean) if mean > 0.0 else None
 
     def cell_volume(self, name: str = "flux_mesh") -> float:
         mesh = self._sp.get_tally(name=name).find_filter(openmc.MeshFilter).mesh
@@ -349,6 +370,12 @@ class Results:
     def n_inactive(self) -> int:
         return int(getattr(self._sp, "n_inactive", 0) or 0)
 
+    @property
+    def gen_per_batch(self) -> int:
+        """Generations per batch (OpenMC default 1). The Shannon-entropy array is
+        per-*generation*, so batch counts must be scaled by this to index it."""
+        return int(getattr(self._sp, "gen_per_batch", 1) or 1)
+
     def k_generation(self):
         """Per-generation k-effective (single estimator), or None — for replaying
         the convergence curve of a saved run loaded from its statepoint."""
@@ -371,11 +398,13 @@ class Results:
             keff = float(k.nominal_value)
             keff_std = float(k.std_dev)
         n_inactive = self.n_inactive
+        gpb = self.gen_per_batch
         ent = self.entropy()
 
         n_active = 0
         if ent is not None:
-            n_active = max(int(ent.size) - n_inactive, 0)
+            # entropy is per-generation; convert to active *batches*.
+            n_active = max(int(ent.size) // gpb - n_inactive, 0)
         elif fixed_source:
             n_active = int(getattr(self._sp, "n_batches", 0) or 0)
 
@@ -389,7 +418,7 @@ class Results:
             warnings = _fixed_source_warnings(mean_rel)
         else:
             warnings = _convergence_warnings(
-                keff_std, ent, n_inactive, n_active, mean_rel, max_rel
+                keff_std, ent, n_inactive, n_active, mean_rel, max_rel, gpb
             )
         return Diagnostics(
             keff=keff,
@@ -528,6 +557,7 @@ def _convergence_warnings(
     n_active: int,
     mean_rel: float | None,
     max_rel: float | None,
+    gen_per_batch: int = 1,
 ) -> list[str]:
     """Plain-language cautions from simple, defensible heuristics."""
     out: list[str] = []
@@ -551,9 +581,10 @@ def _convergence_warnings(
         )
 
     # Shannon-entropy plateau test: if the source entropy is still systematically
-    # rising through the *active* batches, tallying began before convergence.
+    # rising through the *active* batches, tallying began before convergence. The array
+    # is per-generation, so the inactive cut is n_inactive × generations-per-batch.
     if entropy is not None and n_active >= 3:
-        active = entropy[n_inactive:]
+        active = entropy[n_inactive * gen_per_batch:]
         if active.size >= 3:
             third = max(1, active.size // 3)
             first, last = active[:third], active[-third:]

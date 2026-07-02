@@ -161,6 +161,11 @@ thin visualization slice mesh instead of a global tally over-counts the source r
   The filter default (linear-linear) deviates from log-log by up to ~3.5% in the
   thermal range on the openmc-provided table; NBEAST sets log-log explicitly on every
   dose tally (templates and CAD), locked in by tests.
+- **Absolute-map error bars are per-cell only.** An absolute (power-normalized) map
+  scales every cell's mean by one source rate, itself a well-converged κ-fission tally
+  estimate. The displayed per-cell relative error is the flux tally's own and does not
+  fold in that (small, common) source-rate σ — `Results.source_rate_rel_err()` exposes
+  it for callers wanting a fully-propagated bar.
 - **Absolute units require a reactor power and a fissile system.** The normalization is
   a fission-power normalization (κ-fission over the whole model); it lands on the right
   order of magnitude (see above) but is not calibrated against an absolute flux standard.

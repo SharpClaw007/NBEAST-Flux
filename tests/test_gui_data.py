@@ -77,7 +77,7 @@ def test_downloaded_items_are_deletable_in_context(qapp, monkeypatch):
 
     xs = os.environ.get("OPENMC_CROSS_SECTIONS")
     if not xs:
-        return
+        pytest.skip("OPENMC_CROSS_SECTIONS not set")
     bundle = materials.available_names(xs)
     monkeypatch.setattr(data, "downloaded_elements", lambda a, s: ["Pu"])
     monkeypatch.setattr(data, "downloaded_sab", lambda a, s: ["c_D_in_D2O"])

@@ -3,6 +3,8 @@
 import glob
 import os
 
+import pytest
+
 from nbeast.core import data
 
 
@@ -23,12 +25,12 @@ def test_downloaded_detection_and_per_element_delete(tmp_path):
 
     xs = os.environ.get("OPENMC_CROSS_SECTIONS")
     if not xs:
-        return
+        pytest.skip("OPENMC_CROSS_SECTIONS not set — need real .h5 files to reindex")
     h5s = {os.path.basename(p): p for p in glob.glob(os.path.join(os.path.dirname(xs), "*.h5"))}
     h1 = next((p for n, p in h5s.items() if n.startswith("H1")), None)
     zr = next((p for n, p in h5s.items() if n.startswith("Zr90")), None)
     if not (h1 and zr):
-        return
+        pytest.skip("bundled H1/Zr90 .h5 files not found next to the cross_sections.xml")
 
     starter = tmp_path / "starter"
     starter.mkdir()
@@ -52,10 +54,10 @@ def test_downloaded_detection_and_per_element_delete(tmp_path):
 def test_import_files_and_reset(tmp_path):
     xs = os.environ.get("OPENMC_CROSS_SECTIONS")
     if not xs:
-        return  # need a real .h5 to reindex
+        pytest.skip("OPENMC_CROSS_SECTIONS not set — need a real .h5 to reindex")
     h5s = glob.glob(os.path.join(os.path.dirname(xs), "*.h5"))
     if not h5s:
-        return
+        pytest.skip("no bundled .h5 files found next to the cross_sections.xml")
     dest = tmp_path / "lib"
     xml = data.import_files([h5s[0]], dest=str(dest))
     assert xml.exists()
