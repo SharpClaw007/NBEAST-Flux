@@ -18,6 +18,13 @@ def test_size_table_and_aggregation():
     assert data.format_size(30_000_000).endswith("MB")
 
 
+def test_standard_tier_is_a_sized_common_subset():
+    """The Standard tier is the common-materials set, smaller than the full library."""
+    assert {"B", "Fe", "Cr", "Ni", "C", "Al", "Gd"} <= set(data.STANDARD_ELEMENTS)
+    assert 0 < data.standard_size() < data.everything_size()
+    assert data.format_size(data.standard_size()).endswith(("MB", "GB"))
+
+
 def test_downloaded_detection_and_per_element_delete(tmp_path):
     """Elements present in the active library but not the starter are 'downloaded' and
     deletable; deleting removes only that element's files from the user dir."""

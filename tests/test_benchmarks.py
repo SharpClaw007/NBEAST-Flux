@@ -56,6 +56,29 @@ def test_jezebel_critical(tmp_path, monkeypatch):
 
 
 @requires_data
+def test_leu_comp_therm_001_critical(tmp_path, monkeypatch):
+    """ICSBEP LEU-COMP-THERM-001 Case 1 — water-moderated 2.35% UO2 rod cluster, a
+    published thermal critical experiment (k = 1.0000 ± 0.0031). The thermal-lattice
+    credibility anchor. Skips unless the 6061-Al clad elements are installed (a download
+    beyond the bundle); the end plugs / base plate are omitted (~few hundred pcm)."""
+    import openmc
+
+    from nbeast.core import benchmarks, data, materials
+
+    present = {data.element_of(n) for n in materials.available_names(_XS)}
+    if not set(benchmarks.LCT001_ELEMENTS) <= present:
+        pytest.skip("LEU-COMP-THERM-001 needs the 6061-Al clad elements (a download)")
+
+    monkeypatch.chdir(tmp_path)
+    model = benchmarks.leu_comp_therm_001(batches=120, inactive=40, particles=4000, seed=1)
+    with openmc.StatePoint(model.run(output=False)) as sp:
+        k = sp.keff
+    # validated k = 1.00206 ± 136 pcm (+206 pcm, within combined σ); band allows for the
+    # omitted end-plugs/base-plate + extra rod + CI-quality statistics.
+    assert abs(k.nominal_value - 1.0) < 0.012, f"LCT-001 k_eff off: {k}"
+
+
+@requires_data
 def test_mosteller_pincell_doppler(tmp_path, monkeypatch):
     """Mosteller Doppler-defect benchmark (LA-UR-07-0922) at 3.9 wt%. Validates a real
     published thermal pin cell: absolute k∞ near the cross-code reference, and a

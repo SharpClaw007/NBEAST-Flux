@@ -130,3 +130,101 @@ def mosteller_pincell(enrichment: float = 2.4, fuel_temp: float = 900.0,
 def assembly(**kwargs) -> openmc.model.Model:
     """N×N PWR fuel assembly (reflective); k_inf ~= the pin-cell value."""
     return templates.assembly(**kwargs)
+
+
+# --- ICSBEP LEU-COMP-THERM-001 (water-moderated 2.35 wt% UO2 rod cluster) ------
+# Case 1: a single critical cluster (20×18 rods) in a large water reflector. This is a
+# published *thermal* critical experiment (k = 1.00000 ± 0.00310) — the thermal-lattice
+# credibility anchor, complementing the fast Godiva/Jezebel spheres. Atom densities and
+# dimensions are the ICSBEP benchmark-model values (via the public Serpent/PNL-2438
+# translation). Needs Al + 6061-trace + O/U/H data (a download beyond the bundle).
+# Simplification (documented): the Al end plugs and the acrylic base plate are omitted;
+# they are small reflector perturbations on a water-flooded cluster.
+LCT001_KEFF = (1.00000, 0.00310)
+LCT001_ELEMENTS = ("Al", "Cr", "Fe", "Mn", "Cu", "Mg", "Ti", "Zn", "Si")  # 6061 clad
+
+
+def _lct001_materials():
+    fuel = openmc.Material(name="LCT-001 UO2 2.35%")
+    for nuc, dens in (("U234", 2.8563e-6), ("U235", 4.8785e-4), ("U236", 3.5348e-6),
+                      ("U238", 2.0009e-2), ("O16", 4.1202e-2)):
+        fuel.add_nuclide(nuc, dens)
+    fuel.set_density("atom/b-cm", 2.0009e-2 + 4.8785e-4 + 2.8563e-6 + 3.5348e-6 + 4.1202e-2)
+
+    clad = openmc.Material(name="LCT-001 6061 Al clad")
+    # Al-27 and Mn-55 are mono-isotopic (nuclides); the rest are elemental atom
+    # densities → add_element so OpenMC expands them to natural isotopes.
+    clad.add_nuclide("Al27", 5.8433e-2)
+    clad.add_nuclide("Mn55", 2.2115e-5)
+    for element, dens in (("Cr", 6.2310e-5), ("Cu", 6.3731e-5), ("Mg", 6.6651e-4),
+                          ("Ti", 2.5375e-5), ("Zn", 3.0967e-5), ("Si", 3.4607e-4),
+                          ("Fe", 1.0152e-4)):
+        clad.add_element(element, dens)
+    clad.set_density("atom/b-cm", sum(
+        (5.8433e-2, 6.2310e-5, 6.3731e-5, 6.6651e-4, 2.2115e-5, 2.5375e-5,
+         3.0967e-5, 3.4607e-4, 1.0152e-4)))
+
+    water = openmc.Material(name="LCT-001 water")
+    water.add_nuclide("H1", 6.6706e-2)
+    water.add_nuclide("O16", 3.3353e-2)
+    water.add_s_alpha_beta("c_H_in_H2O")
+    water.set_density("atom/b-cm", 6.6706e-2 + 3.3353e-2)
+    return fuel, clad, water
+
+
+def leu_comp_therm_001(nx: int = 20, ny: int = 18, batches: int = 150,
+                       inactive: int = 40, particles: int = 5000,
+                       seed: int | None = None) -> openmc.model.Model:
+    """ICSBEP LEU-COMP-THERM-001 Case 1 — a water-moderated 2.35 wt% UO2 rod cluster,
+    k ~= 1.0. Faithful benchmark-model compositions/dimensions; a 3-D finite rod lattice
+    in a water reflector (vacuum outer). The published critical cluster is 20×18 rods
+    plus one edge rod (18.08 columns) — the extra fractional rod is omitted (~a few
+    hundred pcm), so expect k slightly below 1.0."""
+    fuel_mat, clad_mat, water_mat = _lct001_materials()
+    pitch, r_fuel, r_clad = 2.032, 0.5588, 0.635
+    z_bot, z_top = -44.665, 47.775          # active fuel column (92.44 cm)
+
+    fuel_or = openmc.ZCylinder(r=r_fuel)
+    clad_or = openmc.ZCylinder(r=r_clad)
+    bot = openmc.ZPlane(z_bot)
+    top = openmc.ZPlane(z_top)
+    fuel_cell = openmc.Cell(name="fuel", fill=fuel_mat, region=-fuel_or & +bot & -top)
+    clad_cell = openmc.Cell(name="clad", fill=clad_mat, region=+fuel_or & -clad_or & +bot & -top)
+    # water fills the rest of the pin cell (radially + the plena above/below the column)
+    water_pin = openmc.Cell(name="pin_water", fill=water_mat,
+                            region=~(-clad_or & +bot & -top))
+    pin = openmc.Universe(cells=[fuel_cell, clad_cell, water_pin])
+    water_u = openmc.Universe(cells=[openmc.Cell(fill=water_mat)])
+
+    lattice = openmc.RectLattice()
+    lattice.lower_left = (-nx * pitch / 2.0, -ny * pitch / 2.0)
+    lattice.pitch = (pitch, pitch)
+    lattice.universes = [[pin] * nx for _ in range(ny)]
+    lattice.outer = water_u
+
+    hx, hy = nx * pitch / 2.0, ny * pitch / 2.0
+    x0, x1 = openmc.XPlane(-hx), openmc.XPlane(hx)
+    y0, y1 = openmc.YPlane(-hy), openmc.YPlane(hy)
+    # Water reflector box: ~30 cm radially, ~10 above / ~15.3 below the fuel column;
+    # vacuum outer. Everything (lattice column + surrounding water) lives inside it.
+    rx0 = openmc.XPlane(-hx - 30.0, boundary_type="vacuum")
+    rx1 = openmc.XPlane(hx + 30.0, boundary_type="vacuum")
+    ry0 = openmc.YPlane(-hy - 30.0, boundary_type="vacuum")
+    ry1 = openmc.YPlane(hy + 30.0, boundary_type="vacuum")
+    rz0 = openmc.ZPlane(z_bot - 15.3, boundary_type="vacuum")
+    rz1 = openmc.ZPlane(z_top + 10.0, boundary_type="vacuum")
+
+    # The lattice column is bounded in z by the reflector box (else particles leak out
+    # the unbounded top/bottom of the column → "lost particles").
+    column = +x0 & -x1 & +y0 & -y1 & +rz0 & -rz1
+    lat_cell = openmc.Cell(fill=lattice, region=column)
+    refl = openmc.Cell(fill=water_mat,
+                       region=(+rx0 & -rx1 & +ry0 & -ry1 & +rz0 & -rz1) & ~column)
+    geometry = openmc.Geometry([lat_cell, refl])
+
+    source = openmc.IndependentSource(
+        space=openmc.stats.Box((-hx, -hy, z_bot), (hx, hy, z_top)),
+        constraints={"fissionable": True})
+    settings = templates._eigenvalue_settings(batches, inactive, particles, source, seed)
+    return openmc.model.Model(geometry, openmc.Materials([fuel_mat, clad_mat, water_mat]),
+                              settings)

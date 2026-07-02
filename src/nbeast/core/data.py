@@ -46,6 +46,21 @@ def default_data_dir() -> pathlib.Path:
     return pathlib.Path(os.path.expanduser("~/.nbeast/data"))
 
 
+# The "Standard" tier — the common materials most of the catalog needs, beyond the
+# bundled H/O/U/Zr "Lite" set. Installing these makes ~90% of the material dropdown
+# runnable (steels, absorbers, graphite/CO2, sodium, lead, aluminum, …) without the
+# full ~5 GB library. Packagers can pre-fetch these into a "Standard" installer;
+# online users can one-click them from the Data Library.
+STANDARD_ELEMENTS = ["B", "C", "N", "Na", "Al", "Si", "Cr", "Mn", "Fe", "Ni", "Mo",
+                     "Gd", "Pb", "He"]
+STANDARD_SAB = ["c_Graphite"]
+
+
+def standard_size() -> int:
+    """Approximate download size (bytes) of the Standard tier."""
+    return size_for(elements=STANDARD_ELEMENTS, sab=STANDARD_SAB)
+
+
 # ---- download-size estimates -------------------------------------------------
 # A cached table of real ENDF/B-VIII.0 (+ ENDF/B-7.1 S(α,β)) file sizes, probed once
 # from the download host, so the library can show sizes instantly and offline.

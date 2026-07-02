@@ -30,6 +30,9 @@ def test_data_library_has_materials_and_elements_tabs(qapp):
     assert all(not dialog.tree.topLevelItem(i).isExpanded()
                for i in range(dialog.tree.topLevelItemCount()))
     assert "GB" in dialog.everything_btn.text() or "MB" in dialog.everything_btn.text()
+    # standard-set one-click (common materials) is offered with its own size
+    assert "standard set" in dialog.standard_btn.text().lower()
+    assert "GB" in dialog.standard_btn.text() or "MB" in dialog.standard_btn.text()
     dialog.close()
 
 

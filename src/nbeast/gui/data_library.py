@@ -200,6 +200,12 @@ class DataLibraryDialog(QDialog):
         layout.addWidget(self.status)
 
         bottom = QHBoxLayout()
+        self.standard_btn = QPushButton(
+            f"Download standard set ({data.format_size(data.standard_size())})")
+        self.standard_btn.setToolTip(
+            "The common materials most of the catalog needs (steels, absorbers, graphite, "
+            "sodium, lead, aluminum…) — makes ~90% of the material list runnable.")
+        self.standard_btn.clicked.connect(self._download_standard)
         self.everything_btn = QPushButton(
             f"Download everything ({data.format_size(data.everything_size())})")
         self.everything_btn.clicked.connect(self._download_everything)
@@ -209,6 +215,7 @@ class DataLibraryDialog(QDialog):
         self.reset_btn.setToolTip("Remove all downloaded/imported data, freeing space "
                                   "and reverting to the bundled starter library.")
         self.reset_btn.clicked.connect(self._reset)
+        bottom.addWidget(self.standard_btn)
         bottom.addWidget(self.everything_btn)
         bottom.addWidget(self.import_btn)
         bottom.addWidget(self.reset_btn)
@@ -487,6 +494,17 @@ class DataLibraryDialog(QDialog):
             return str(xml) if xml else (active or "")
 
         self._run(fn, f"Removing {names}…")
+
+    def _download_standard(self) -> None:
+        size = data.format_size(data.standard_size())
+        if QMessageBox.question(
+            self, "Download standard set",
+            f"Download the common materials most of the catalog needs ({size})? This makes "
+            "~90% of the material list runnable (steels, absorbers, graphite, sodium, "
+            "lead, aluminum…) without the full library.",
+        ) != QMessageBox.Yes:
+            return
+        self._download(elements=list(data.STANDARD_ELEMENTS), sab=list(data.STANDARD_SAB))
 
     def _download_everything(self) -> None:
         size = data.format_size(data.everything_size())

@@ -20,6 +20,7 @@ seed, and the model NBEAST itself builds from each template. Reproduce everythin
 |---|---|---|---|
 | **Godiva k-eff** — ICSBEP **HEU-MET-FAST-001** (bare HEU sphere, r = 8.7407 cm) | **1.00000 ± 0.00044** | **1.0000 ± 0.0010** | ✅ exact (0 pcm) |
 | **Jezebel k-eff** — ICSBEP **PU-MET-FAST-001** (bare δ-phase Pu-Ga sphere, r = 6.3849 cm) | **0.99893 ± 0.00070** | **1.0000 ± 0.0020** | ✅ (−107 pcm, ~1.4σ) |
+| **LEU-COMP-THERM-001** — ICSBEP (water-moderated 2.35 % UO₂ rod cluster, Case 1) | **1.00206 ± 0.00136** | **1.0000 ± 0.0031** | ✅ (+206 pcm, within σ) |
 | Godiva spectrum | 96.3 % fast (>0.1 MeV), ~0 % thermal, mean E = 1.46 MeV | hard fast spectrum | ✅ |
 | PWR pin cell k∞ — fresh 3.2 % UO₂ | 1.41303 ± 0.00086 | ≈ 1.40 | ✅ in range |
 | **Mosteller pin cell** k∞ (3.9 %, HFP) — LA-UR-07-0922 | **1.23098 ± 0.00201** | 1.23048 ± 0.00029 (ENDF/B-VII.0) | ✅ (+50 pcm) |
@@ -46,7 +47,16 @@ The **pin cell** (k∞ ≈ 1.413) and **5×5 assembly** (k∞ ≈ 1.413, matchin
 to ~1 pcm) confirm the thermal-lattice path: correct UO₂/Zr/water materials, the
 H-in-H₂O thermal-scattering kernel, and reflective-lattice boundaries.
 
-The thermal path now also has an **external** anchor: the **Mosteller Doppler-defect
+The thermal path is now anchored by a **published critical experiment**:
+**LEU-COMP-THERM-001** (ICSBEP), a water-moderated 2.35 % UO₂ rod cluster. NBEAST builds
+the benchmark-model geometry (2.032 cm pitch, 6061-Al-clad rods, exact atom densities,
+finite fuel column + water reflector; end plugs and base plate omitted) and returns
+**k = 1.00206 ± 0.00136** against the benchmark **1.0000 ± 0.0031** — **+206 pcm, inside
+the combined uncertainty**. This upgrades the thermal-lattice claim from "textbook +
+internal consistency" to a reproduced critical experiment (k = 1.0). Needs the 6061-Al
+clad elements (a download; `benchmarks.leu_comp_therm_001()`).
+
+The thermal path also has a **Doppler** anchor: the **Mosteller Doppler-defect
 benchmark** (LA-UR-07-0922 — the exact benchmark pin geometry, atom densities, and
 1400 ppm borated moderator). Across 0.711 / 2.4 / 3.9 wt%, NBEAST's Doppler
 coefficients (**−4.87 / −1.48 / −2.32 pcm/K**) agree with the ENDF/B-VII.0 reference
