@@ -145,6 +145,19 @@ thin visualization slice mesh instead of a global tally over-counts the source r
 ~300× (the slice captures only a fraction of the fissions), which is why the global
 `power_norm` tally is required.
 
+Two anchors formalize this (both in `tests/test_units.py`):
+
+- **Energy conservation.** On Godiva, the whole-geometry KERMA `heating` score
+  integrates to **0.91×** the `kappa-fission` normalization. The ~9% gap is the
+  photon energy that isn't transported (photon transport off by default → gammas
+  deposit at the fission site); the integral normalization is unaffected, and enabling
+  `settings.photon_transport` closes the spatial gap. This bounds the local-deposition
+  assumption rather than leaving it implicit.
+- **Dose hand-calc.** A 1 MeV monoenergetic beam in a near-void gives
+  **dose/flux = 301.0 pSv·cm²**, exactly the ICRP-116 ambient-dose coefficient at 1 MeV
+  — an absolute referent for the dose tally (and a check that the log-log
+  `EnergyFunctionFilter` returns the tabulated value at a grid point).
+
 ## Scope and honest limits
 
 - **Criticality and flux physics are validated** and rest on a published benchmark and

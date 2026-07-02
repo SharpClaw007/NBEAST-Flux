@@ -5,6 +5,14 @@ Field maps come straight from OpenMC tallies: they are *per source neutron* and
 not absolute rates. When a reactor power is supplied the physics normalization
 (see :mod:`nbeast.core.results`) converts them to absolute units; this module
 owns only the display labels + the SI↔US conversions.
+
+Deposition assumption: the source rate comes from a whole-geometry ``kappa-fission``
+tally (recoverable fission energy), and photon transport is off by default, so the
+spatial ``heating`` (KERMA) map deposits photon energy at the fission site rather than
+where gammas actually stop. Energy is conserved to ~10% (KERMA integrates to ~0.91 of
+kappa-fission on an all-actinide system — the un-transported photon fraction; validated
+in ``tests/test_units.py``). For an accurate *spatial* heating map, enable
+``settings.photon_transport``; the integral normalization is unaffected.
 """
 
 from __future__ import annotations
