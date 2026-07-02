@@ -12,13 +12,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QListWidget,
     QListWidgetItem,
     QProgressBar,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
+
+from .uikit import CopyableListWidget
 
 _MAX_LINES = 500
 
@@ -50,10 +51,16 @@ class MessagesStrip(QWidget):
         self.progress_label = QLabel("")
         header.addWidget(self.progress_label)
         header.addStretch(1)
+        self.copy_button = QToolButton()
+        self.copy_button.setText("Copy")
+        self.copy_button.setToolTip("Copy the selected messages (or all) to the clipboard.")
+        self.copy_button.setAutoRaise(True)
+        self.copy_button.clicked.connect(lambda: self.list.copy_selected())
+        header.addWidget(self.copy_button)
         layout.addLayout(header)
 
-        self.list = QListWidget()
-        self.list.setSelectionMode(QListWidget.ExtendedSelection)
+        # Rows are selectable + copyable (⌘C / right-click) so an error is never trapped.
+        self.list = CopyableListWidget()
         self.list.setMaximumHeight(130)
         layout.addWidget(self.list)
 
@@ -63,6 +70,7 @@ class MessagesStrip(QWidget):
             return
         item = QListWidgetItem(("⚠ " if level == "warning" else
                                 "✖ " if level == "error" else "") + text)
+        item.setToolTip(text)                 # full text on hover (rows truncate)
         if level == "error":
             item.setForeground(Qt.red)
         self.list.addItem(item)

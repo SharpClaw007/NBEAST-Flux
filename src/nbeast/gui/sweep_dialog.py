@@ -34,6 +34,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .uikit import make_selectable
+
 from nbeast.core.runner import Runner
 from nbeast.core.sweep import CriticalitySearch, sweep_values
 
@@ -278,6 +280,7 @@ class SweepDialog(QDialog):
         layout.addLayout(controls)
 
         self.status = QLabel("Ready.")
+        make_selectable(self.status)
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color: #555;")
         layout.addWidget(self.status)

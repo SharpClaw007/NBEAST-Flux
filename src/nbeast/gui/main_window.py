@@ -1211,7 +1211,7 @@ class MainWindow(QMainWindow):
             if switch_tab:
                 self.tabs.setCurrentWidget(self.flux_view)
         except Exception as exc:  # noqa: BLE001
-            self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
+            self._log(f"Field '{score}' unavailable: {exc}", "error")
 
     # ---- results section ----------------------------------------------------
     def _result_entries(self) -> list[tuple[str, str]]:
@@ -1284,7 +1284,7 @@ class MainWindow(QMainWindow):
             if switch_tab:
                 self.tabs.setCurrentWidget(self.flux_view)
         except Exception as exc:  # noqa: BLE001
-            self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
+            self._log(f"Field '{score}' unavailable: {exc}", "error")
 
     def _show_cad_field(self, score: str, switch_tab: bool = True) -> None:
         """Render a CAD result field as a 3-D volume on the semi-transparent geometry."""
@@ -1315,7 +1315,7 @@ class MainWindow(QMainWindow):
             if switch_tab:
                 self.tabs.setCurrentWidget(self.flux_view)
         except Exception as exc:  # noqa: BLE001
-            self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
+            self._log(f"Field '{score}' unavailable: {exc}", "error")
 
     def _show_volume(self) -> None:
         """Publication-style 3D volume render of the flux field."""
@@ -1337,7 +1337,7 @@ class MainWindow(QMainWindow):
                                              bar_title=self._field_bar_title("flux"))
             self.tabs.setCurrentWidget(self.flux_view)
         except Exception as exc:  # noqa: BLE001
-            self.statusBar().showMessage(f"Volume render unavailable: {exc}")
+            self._log(f"Volume render unavailable: {exc}", "error")
 
     def show_tracks(self) -> None:
         """Generate a few neutron tracks and render them in the Flux-map tab."""
@@ -1359,7 +1359,7 @@ class MainWindow(QMainWindow):
             self.tabs.setCurrentWidget(self.flux_view)
             self.statusBar().showMessage(f"Showing {len(polylines)} neutron tracks")
         except Exception as exc:  # noqa: BLE001
-            self.statusBar().showMessage(f"Track generation failed: {exc}")
+            self._log(f"Track generation failed: {exc}", "error")
 
     def _on_failed(self, message: str) -> None:
         self.last_result = None
@@ -1517,7 +1517,7 @@ class MainWindow(QMainWindow):
         try:
             self._switch_project(Project.open(directory))
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "Open project", f"Not an NBEAST project:\n{exc}")
+            self._warn_selectable("Open project", f"Not an NBEAST project:\n{exc}")
 
     def _switch_project(self, project: Project) -> None:
         self.project = project
@@ -1549,7 +1549,7 @@ class MainWindow(QMainWindow):
                 out = results.export_mesh_data(path)
             self.statusBar().showMessage(f"Raw data exported to {out}")
         except Exception as exc:  # noqa: BLE001
-            self.statusBar().showMessage(f"Raw export failed: {exc}")
+            self._log(f"Raw export failed: {exc}", "error")
 
     def _update_analysis_availability(self) -> None:
         """Offer only the study kinds that apply to the current template in Add-study."""
@@ -1655,6 +1655,12 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("Depletion data isn't set up — opening the Data Library.")
             self._open_data_library(focus_category="Depletion")
+
+    def _warn_selectable(self, title: str, text: str) -> None:
+        """A warning box whose text the user can select + copy (⌘C)."""
+        box = QMessageBox(QMessageBox.Warning, title, text, QMessageBox.Ok, self)
+        box.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+        box.exec()
 
     def _open_report_center(self) -> None:
         from .report_center import ReportCenterDialog

@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .uikit import make_selectable
+
 from nbeast.core import depletion
 from nbeast.core.depletion import DepletionConfig, DepletionRunner
 
@@ -144,6 +146,7 @@ class DepletionDialog(QDialog):
         layout.addLayout(controls)
 
         self.status = QLabel(f"Chain: {depletion.chain_path()}")
+        make_selectable(self.status)
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 

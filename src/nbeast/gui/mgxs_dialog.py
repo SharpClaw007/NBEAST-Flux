@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .uikit import make_selectable
+
 from nbeast.core import mgxs_gen
 
 from .run_controller import RunController
@@ -97,6 +99,7 @@ class MgxsDialog(QDialog):
         layout.addLayout(controls)
 
         self.status = QLabel("Ready")
+        make_selectable(self.status)
         layout.addWidget(self.status)
 
         self.table = QTableWidget(0, 0)

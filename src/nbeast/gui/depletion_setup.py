@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .uikit import make_selectable
+
 from nbeast.core import depletion
 
 _GUIDE = (
@@ -59,6 +61,7 @@ class DepletionSetupDialog(QDialog):
         layout.addWidget(guide)
 
         self.status = QLabel(self._status_text())
+        make_selectable(self.status)
         self.status.setStyleSheet("color: #555; padding: 4px;")
         layout.addWidget(self.status)
 

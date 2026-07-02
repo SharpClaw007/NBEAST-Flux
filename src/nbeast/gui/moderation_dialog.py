@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .uikit import make_selectable
+
 from nbeast.core import reactivity
 from nbeast.core.sweep import sweep_values
 
@@ -117,6 +119,7 @@ class ModerationDialog(QDialog):
         layout.addLayout(controls)
 
         self.status = QLabel("Ready.")
+        make_selectable(self.status)
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color: #555;")
         layout.addWidget(self.status)

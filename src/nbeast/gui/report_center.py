@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .uikit import make_selectable
+
 
 def build_report_html(title: str, sections: list[tuple[str, list[str]]]) -> str:
     """A self-contained HTML report from (heading, lines) sections. Pure + testable."""
@@ -71,6 +73,7 @@ class ReportCenterDialog(QDialog):
         layout.addStretch(1)
 
         self.status = QLabel("")
+        make_selectable(self.status)
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color:#666;")
         layout.addWidget(self.status)

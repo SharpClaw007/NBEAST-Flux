@@ -34,6 +34,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .uikit import make_selectable
+
 from nbeast.core import data, materials
 
 # Display category -> material-catalog category keys. First category to claim a
@@ -208,6 +210,7 @@ class DataLibraryDialog(QDialog):
         self.progress.setMaximumWidth(220)
         self.progress.hide()
         self.status = QLabel("")
+        make_selectable(self.status)
         self.status.setWordWrap(True)
         status_row = QHBoxLayout()
         status_row.addWidget(self.progress)

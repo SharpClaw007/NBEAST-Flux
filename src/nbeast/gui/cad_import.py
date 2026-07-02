@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .uikit import make_selectable
+
 from nbeast.core import cad
 
 
@@ -103,6 +105,7 @@ class CadImportDialog(QDialog):
         left.addLayout(form)
 
         self.status = QLabel("Pick a STEP file to preview it.")
+        make_selectable(self.status)
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color: #555;")
         left.addWidget(self.status)

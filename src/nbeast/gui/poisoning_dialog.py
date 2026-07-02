@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .uikit import make_selectable
+
 from nbeast.core import poisons, reactivity
 
 # The 3 evaluations, in run order.
@@ -176,11 +178,13 @@ class PoisoningDialog(QDialog):
         layout.addLayout(controls)
 
         self.status = QLabel("Ready.")
+        make_selectable(self.status)
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color: #555;")
         layout.addWidget(self.status)
 
         self.result = QLabel("")
+        make_selectable(self.result)
         self.result.setWordWrap(True)
         self.result.setTextFormat(Qt.RichText)
         layout.addWidget(self.result, stretch=1)
