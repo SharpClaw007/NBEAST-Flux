@@ -21,10 +21,11 @@ def reactivity_pcm(k: float | None) -> float | None:
 
 
 def subcritical_multiplication(k: float | None) -> float | None:
-    """Source multiplication M = 1/(1−k) for a subcritical system (k < 1).
+    """Source multiplication M = 1/(1−k) for a subcritical system (0 < k < 1).
 
-    None at or above critical, where a fixed source has no steady-state power.
+    None at or above critical (no steady-state power), and None for non-physical
+    k ≤ 0 — consistent with :func:`reactivity_pcm`'s domain.
     """
-    if k is None or k >= 1.0:
+    if k is None or k <= 0.0 or k >= 1.0:
         return None
     return 1.0 / (1.0 - k)

@@ -64,7 +64,10 @@ class RunRecord:
     @classmethod
     def from_dict(cls, data: dict) -> "RunRecord":
         known = {f for f in cls.__dataclass_fields__}  # tolerate older/newer keys
-        return cls(**{k: v for k, v in data.items() if k in known})
+        kwargs = {k: v for k, v in data.items() if k in known}
+        kwargs.setdefault("id", "")            # tolerate a partial/corrupt record
+        kwargs.setdefault("template", "")
+        return cls(**kwargs)
 
     @property
     def keff_pcm(self) -> float | None:
@@ -122,15 +125,30 @@ class Project:
         if not manifest.exists():
             raise FileNotFoundError(f"No NBEAST project at {path} (missing {_MANIFEST})")
         data = json.loads(manifest.read_text())
+        if not isinstance(data, dict):
+            raise ValueError(f"{_MANIFEST} is not a JSON object")
+
+        # Be defensive: a hand-edited or corrupt manifest may carry wrong-typed fields.
+        # Coerce each to its expected type (bad values default to empty) rather than
+        # crashing the whole app on open.
+        def _dict(value):
+            return value if isinstance(value, dict) else {}
+
+        def _list(value):
+            return value if isinstance(value, list) else []
+
         proj = cls(path)
-        proj.name = data.get("name", path.name)
-        proj.created_utc = data.get("created_utc", proj.created_utc)
-        proj.template = data.get("template")
-        proj.param_values = data.get("param_values", {}) or {}
-        proj.material_values = data.get("material_values", {}) or {}
-        proj.settings = data.get("settings", {}) or {}
-        proj.runs = [RunRecord.from_dict(r) for r in data.get("runs", [])]
-        proj.studies = list(data.get("studies", []) or [])   # absent in v1 manifests
+        proj.name = str(data.get("name") or path.name)
+        created = data.get("created_utc")
+        proj.created_utc = created if isinstance(created, str) else proj.created_utc
+        template = data.get("template")
+        proj.template = template if isinstance(template, str) else None
+        proj.param_values = _dict(data.get("param_values"))
+        proj.material_values = _dict(data.get("material_values"))
+        proj.settings = _dict(data.get("settings"))
+        proj.runs = [RunRecord.from_dict(r) for r in _list(data.get("runs"))
+                     if isinstance(r, dict)]
+        proj.studies = [s for s in _list(data.get("studies")) if isinstance(s, dict)]
         return proj
 
     @classmethod
