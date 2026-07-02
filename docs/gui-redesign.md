@@ -1,5 +1,23 @@
 # NBEAST GUI overhaul — master plan
 
+> **Status: shipped (G0–G6).** All seven phases are on `main`, suite green (229
+> passed, 5 data-gated skips). The app is now a COMSOL-style Model Builder:
+> - **G0** Document + undo/redo (⌘Z) + project schema v2 (+v1 migration) + window-state persistence.
+> - **G1** Three-pane shell — Model/Studies/Results tree, settings pane, messages strip; menus + shortcuts.
+> - **G2** Live geometry preview (default tab; analytic slices, live on edit).
+> - **G3** Persistent Studies framework (config + results saved in the project); k-eff fully in-pane.
+> - **G4** All analysis tools persist their results onto their study (survive close/reopen).
+> - **G5** Welcome screen (recents + template gallery + examples) and Report center (sectioned HTML/PDF).
+> - **G6** Data Library search + disk-usage footer + non-blocking download progress; polish pass.
+>
+> Deferred-by-design (noted where relevant): full in-pane embedding of the analysis
+> plots (tools remain their own windows but are now persistent + non-modal-in-effect);
+> a dedicated Compare *study* kind (compare stays on the Saved-runs right-click); the
+> CAD import stays its working off-screen-preview dialog rather than a sheet-wizard.
+
+---
+
+
 **Goal:** make NBEAST look and work like commercial scientific software (COMSOL /
 ANSYS class), while keeping the two-layer architecture (`nbeast.core` Qt-free,
 `nbeast.gui` PySide6) and the 200-test suite green at every step.

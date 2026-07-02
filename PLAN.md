@@ -395,10 +395,12 @@ dev python `~/miniforge3/envs/nbeast/bin/python`. App = `NBEAST.app` (thin launc
 - **Analysis tab** (was a menu); **moderation curve**; **reactor poisoning** (Xe/Sm, validated);
   **units** (SI/US + optional reactor-power/source-strength → absolute, validated to PWR scale).
 
-**Next up — GUI overhaul (Phase 8):** COMSOL-style Model Builder + persistent
-Studies + native macOS polish. Full design + 7-phase roadmap (G0–G6) in
-**[docs/gui-redesign.md](docs/gui-redesign.md)**. All 12 rigor criticisms resolved
-first (see criticisms.md header; suite 200 passed).
+**Phase 8 — GUI overhaul (DONE):** COMSOL-style Model Builder shell, persistent
+Studies, live geometry preview, welcome screen, report center, undo/redo, Data
+Library search — all 7 phases (G0–G6) shipped; see
+**[docs/gui-redesign.md](docs/gui-redesign.md)** for the status header + per-phase
+detail. All 12 rigor criticisms were resolved first (see criticisms.md header).
+Suite: 229 passed, 5 data-gated skips.
 
 **Deferred / open:**
 - Account-gated: **Zenodo DOI + JOSS** submission (parked, needs user accounts).

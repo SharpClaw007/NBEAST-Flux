@@ -178,6 +178,14 @@ class DataLibraryDialog(QDialog):
             "become active; the bundled starter set always remains as a fallback."
         ))
 
+        from PySide6.QtWidgets import QLineEdit, QProgressBar
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search materials + elements (e.g. “steel”, “Gd”, “c_Graphite”)…")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._apply_search)
+        layout.addWidget(self.search)
+
         self.tabs = QTabWidget()
         # --- Materials tab ---
         self.tree = QTreeWidget()
@@ -195,9 +203,20 @@ class DataLibraryDialog(QDialog):
         self.tabs.addTab(self.el_stack, "Elements")
         layout.addWidget(self.tabs, 1)
 
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)         # indeterminate: downloads have no batch count
+        self.progress.setMaximumWidth(220)
+        self.progress.hide()
         self.status = QLabel("")
         self.status.setWordWrap(True)
-        layout.addWidget(self.status)
+        status_row = QHBoxLayout()
+        status_row.addWidget(self.progress)
+        status_row.addWidget(self.status, 1)
+        layout.addLayout(status_row)
+
+        self.disk_label = QLabel("")
+        self.disk_label.setStyleSheet("color:#888;")
+        layout.addWidget(self.disk_label)
 
         bottom = QHBoxLayout()
         self.standard_btn = QPushButton(
@@ -237,6 +256,43 @@ class DataLibraryDialog(QDialog):
         if self._detail_element:
             self._show_element_detail(self._detail_element)   # refresh an open detail view
         self.status.setText(f"Active library: {self._active_xml or '(bundled starter)'}")
+        self._update_disk_usage()
+        if getattr(self, "search", None) is not None and self.search.text():
+            self._apply_search(self.search.text())
+
+    def _update_disk_usage(self) -> None:
+        installed = data.installed_h5()
+        if not installed:
+            self.disk_label.setText("Disk: bundled starter only (no downloads).")
+            return
+        import os
+
+        total = 0
+        for name in installed:
+            try:
+                total += os.path.getsize(self._user_dir / name)
+            except OSError:
+                pass
+        self.disk_label.setText(
+            f"Disk: {len(installed)} downloaded data files · {data.format_size(total)} "
+            f"in {self._user_dir}")
+
+    def _apply_search(self, text: str) -> None:
+        """Filter the Materials tree to rows matching the query; empty shows everything.
+        Matches material label, category, and the needed-element/status text."""
+        query = text.strip().lower()
+        for i in range(self.tree.topLevelItemCount()):
+            cat = self.tree.topLevelItem(i)
+            any_visible = False
+            for j in range(cat.childCount()):
+                row = cat.child(j)
+                haystack = " ".join(row.text(c).lower() for c in range(3)) + " " + cat.text(0).lower()
+                match = (query in haystack) if query else True
+                row.setHidden(not match)
+                any_visible = any_visible or match
+            cat.setHidden(bool(query) and not any_visible)
+            if any_visible and query:
+                cat.setExpanded(True)
 
     # ---- Materials tab ----------------------------------------------------
     def _build_materials_tree(self, available) -> None:
@@ -571,9 +627,11 @@ class DataLibraryDialog(QDialog):
         self._thread.start()
 
     def _set_busy(self, busy: bool, message: str) -> None:
-        for button in (self.everything_btn, self.import_btn, self.reset_btn):
+        # Only the download-triggering buttons are disabled during a download; browsing
+        # the tree / periodic table / search stays live, and a progress bar shows work.
+        for button in (self.standard_btn, self.everything_btn, self.import_btn, self.reset_btn):
             button.setEnabled(not busy)
-        self.tabs.setEnabled(not busy)
+        self.progress.setVisible(busy)
         self.status.setText(message)
 
     def _teardown(self) -> None:
