@@ -19,6 +19,26 @@ def test_equilibrium_ratios_saturation():
     assert math.isclose(xe_hi, xe, rel_tol=1e-3)
 
 
+def test_equilibrium_ratios_accepts_spectrum_averaged_xs():
+    """Spectrum-averaged σ overrides feed straight into the equilibrium ratios, replacing
+    the mismatched 2200 m/s pair with a spectrum-consistent σ_f(U235)/σ_a set. Check the
+    plumbing against the closed form: saturation Xe ∝ σ_f/σ_a, Sm ∝ σ_f/σ_a(Sm)."""
+    xe_default, sm_default = poisons.equilibrium_ratios()
+    # saturation Xe ∝ 1/σ_a(Xe): halving σ_a(Xe) doubles the equilibrium ratio
+    xe_soft, _ = poisons.equilibrium_ratios(sigma_a_xe=poisons.SIGMA_A_XE / 2)
+    assert math.isclose(xe_soft, xe_default * 2, rel_tol=1e-6)
+    # both ratios ∝ σ_f(U235): doubling it doubles both
+    xe_hi, sm_hi = poisons.equilibrium_ratios(sigma_f_u235=poisons.SIGMA_F_U235 * 2)
+    assert math.isclose(xe_hi, xe_default * 2, rel_tol=1e-6)
+    assert math.isclose(sm_hi, sm_default * 2, rel_tol=1e-6)
+
+
+def test_spectrum_averaged_xs_handles_missing_gracefully():
+    # bad/empty spectrum or no data → empty dict, never raises
+    assert poisons.spectrum_averaged_xs([], [], None) == {}
+    assert poisons.spectrum_averaged_xs([1.0, 2.0], [0.0], "nonexistent.xml") == {}
+
+
 def test_add_to_fuel_places_poisons_at_target_ratio():
     fuel = materials.build("uo2", enrichment=3.2)
     xe, sm = poisons.equilibrium_ratios()
