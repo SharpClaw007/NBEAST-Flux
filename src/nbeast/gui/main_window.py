@@ -1573,12 +1573,27 @@ class MainWindow(QMainWindow):
             return False
         return True
 
+    def _connect_study(self, dialog) -> None:
+        """Persist a tool's result onto the study that launched it."""
+        study_id = self._active_study
+        if study_id is None or not hasattr(dialog, "studyResult"):
+            return
+        dialog.studyResult.connect(lambda result, sid=study_id: self._store_study_result(sid, result))
+
+    def _store_study_result(self, study_id: str, result) -> None:
+        if self.studies.get(study_id) is not None:
+            self.studies.set_result(study_id, result)
+            self._refresh_studies()
+            if self._settings_stack.currentWidget() is self.study_pane:
+                self.study_pane.refresh_result()
+
     def _open_sweep(self) -> None:
         if not self._analysis_needs_template():
             return
         from .sweep_dialog import SweepDialog
 
         dialog = SweepDialog(self, parent=self)
+        self._connect_study(dialog)
         dialog.exec()
 
     def _open_moderation(self) -> None:
@@ -1591,7 +1606,9 @@ class MainWindow(QMainWindow):
             return
         from .moderation_dialog import ModerationDialog
 
-        ModerationDialog(self, parent=self).exec()
+        dialog = ModerationDialog(self, parent=self)
+        self._connect_study(dialog)
+        dialog.exec()
 
     def _open_poisoning(self) -> None:
         if not self._analysis_needs_template():
@@ -1603,14 +1620,18 @@ class MainWindow(QMainWindow):
             return
         from .poisoning_dialog import PoisoningDialog
 
-        PoisoningDialog(self, parent=self).exec()
+        dialog = PoisoningDialog(self, parent=self)
+        self._connect_study(dialog)
+        dialog.exec()
 
     def _open_mgxs(self) -> None:
         if not self._analysis_needs_template():
             return
         from .mgxs_dialog import MgxsDialog
 
-        MgxsDialog(self, parent=self).exec()
+        dialog = MgxsDialog(self, parent=self)
+        self._connect_study(dialog)
+        dialog.exec()
 
     def _open_depletion(self) -> None:
         if not self._analysis_needs_template():
@@ -1620,7 +1641,9 @@ class MainWindow(QMainWindow):
         if depletion.is_available():
             from .depletion_dialog import DepletionDialog
 
-            DepletionDialog(self, parent=self).exec()
+            dialog = DepletionDialog(self, parent=self)
+            self._connect_study(dialog)
+            dialog.exec()
         else:
             self.statusBar().showMessage("Depletion data isn't set up — opening the Data Library.")
             self._open_data_library(focus_category="Depletion")

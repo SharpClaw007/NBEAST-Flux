@@ -56,6 +56,8 @@ class _DepletionWorker(QObject):
 
 
 class DepletionDialog(QDialog):
+    studyResult = Signal(object)   # a core.studies.StudyResult when depletion completes
+
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self.main = main_window
@@ -238,6 +240,16 @@ class DepletionDialog(QDialog):
             self.table.setItem(r, 1, QTableWidgetItem(f"{k:.5f}"))
         self.export_btn.setEnabled(True)
         self.status.setText(f"Done — {len(result.days)} burnup points.")
+        from datetime import datetime, timezone
+
+        from nbeast.core.studies import StudyResult
+
+        points = [(float(d), float(k)) for d, k in zip(result.days, result.keff)]
+        self.studyResult.emit(StudyResult(
+            ok=True, summary=f"k vs burnup over {len(points)} points "
+            f"(k {result.keff[0]:.4f} → {result.keff[-1]:.4f})", points=points,
+            warnings=["Burnup numbers are not benchmarked (workflow-only validation)."],
+            created_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
 
     @Slot(str)
     def _on_failed(self, message: str) -> None:

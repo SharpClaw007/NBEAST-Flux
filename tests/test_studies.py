@@ -96,3 +96,44 @@ def test_mainwindow_has_default_keff_study_and_persists_result(qapp, tmp_path):
     result = win.studies.get_result(win._active_study)
     assert result and "1.413" in result.summary
     win.close()
+
+
+def test_analysis_tool_result_persists_onto_study(qapp, tmp_path):
+    """When a launched analysis tool emits a StudyResult, it is stored on the study
+    that launched it and survives a reopen (resolves the 'closed dialog loses results')."""
+    from nbeast.core.project import Project
+    from nbeast.core.studies import StudyResult
+    from nbeast.gui.main_window import MainWindow
+    from nbeast.gui.studies import StudyStore
+
+    win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "p")
+    win.set_template("Pin cell")
+    win._add_study("sweep")
+    sid = next(c.study_id for c in win.studies.configs() if c.kind == "sweep")
+    win._active_study = sid
+    win._store_study_result(sid, StudyResult(ok=True, summary="critical pitch = 1.31 ± 0.02 cm",
+                                             points=[(1.2, 1.30, 1e-3), (1.4, 1.42, 1e-3)]))
+    win.close()
+
+    store = StudyStore(Project.open(tmp_path / "p"))
+    result = store.get_result(sid)
+    assert result and "critical pitch" in result.summary and len(result.points) == 2
+
+
+def test_all_analysis_dialogs_expose_studyresult_signal(qapp, tmp_path):
+    """Every migrated analysis tool advertises the studyResult bridge."""
+    from nbeast.gui.main_window import MainWindow
+
+    win = MainWindow(run_root=tmp_path, project_dir=tmp_path / "p")
+    win.set_template("Pin cell")
+    from nbeast.gui.depletion_dialog import DepletionDialog
+    from nbeast.gui.mgxs_dialog import MgxsDialog
+    from nbeast.gui.moderation_dialog import ModerationDialog
+    from nbeast.gui.poisoning_dialog import PoisoningDialog
+    from nbeast.gui.sweep_dialog import SweepDialog
+
+    for cls in (SweepDialog, ModerationDialog, PoisoningDialog, MgxsDialog, DepletionDialog):
+        dialog = cls(win, parent=win)
+        assert hasattr(dialog, "studyResult")
+        dialog.close()
+    win.close()

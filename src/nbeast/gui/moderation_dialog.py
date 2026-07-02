@@ -10,7 +10,7 @@ climbs toward the critical crossing, a genuine relative power proxy.
 from __future__ import annotations
 
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -32,6 +32,8 @@ from .sweep_dialog import SweepController
 
 class ModerationDialog(QDialog):
     """Applicable to templates with a moderator (pin cell, assembly)."""
+
+    studyResult = Signal(object)   # a core.studies.StudyResult when the sweep completes
 
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
@@ -233,6 +235,14 @@ class ModerationDialog(QDialog):
             elif ks and min(ks) > 1:
                 msg += "  Stays supercritical over this range."
         self.status.setText(msg)
+        from datetime import datetime, timezone
+
+        from nbeast.core.studies import StudyResult
+
+        self.studyResult.emit(StudyResult(
+            ok=bool(self._points), summary=msg.rstrip("."), points=list(self._points),
+            scalars={"critical_at": crossings[0]} if crossings else {},
+            created_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
 
     def _critical_crossings(self) -> list[float]:
         """Linear-interpolated x where k crosses 1 between adjacent points."""

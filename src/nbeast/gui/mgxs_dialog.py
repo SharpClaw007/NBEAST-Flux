@@ -12,6 +12,7 @@ loaded from the statepoint when the run finishes.
 
 from __future__ import annotations
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -33,6 +34,8 @@ from .run_controller import RunController
 
 
 class MgxsDialog(QDialog):
+    studyResult = Signal(object)   # a core.studies.StudyResult when generation completes
+
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self.main = main_window
@@ -143,9 +146,16 @@ class MgxsDialog(QDialog):
         self.export_csv_btn.setEnabled(True)
         self.export_h5_btn.setEnabled(True)
         n = self._table["n_groups"]
-        self.status.setText(
-            f"{n}-group constants for {len(self._table['domains'])} domains."
-            + getattr(self, "_matrix_note", ""))
+        summary = f"{n}-group constants for {len(self._table['domains'])} domains"
+        self.status.setText(summary + "." + getattr(self, "_matrix_note", ""))
+        from datetime import datetime, timezone
+
+        from nbeast.core.studies import StudyResult
+
+        self.studyResult.emit(StudyResult(
+            ok=True, summary=summary,
+            scalars={"n_groups": n, "domains": len(self._table["domains"])},
+            created_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
 
     def _on_failed(self, message: str) -> None:
         self.run_btn.setEnabled(True)

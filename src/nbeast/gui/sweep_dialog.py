@@ -192,6 +192,8 @@ class SweepController(QObject):
 
 # ---- dialog ----------------------------------------------------------------
 class SweepDialog(QDialog):
+    studyResult = Signal(object)   # a core.studies.StudyResult when a run completes
+
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self.main = main_window
@@ -498,6 +500,27 @@ class SweepDialog(QDialog):
                 + "  (stopped early — a configuration in the bracket couldn't be evaluated; "
                 "narrow the bracket or check the material.)"
             )
+        self._emit_study_result(summary)
+
+    def _emit_study_result(self, summary) -> None:
+        from datetime import datetime, timezone
+
+        from nbeast.core.studies import StudyResult
+
+        p = self._current_param()
+        points = [(x, k, std) for x, k, std in self._points]
+        if summary.get("mode") == "search":
+            x, x_std = summary.get("x"), summary.get("x_std")
+            text = (f"critical {p.label} = {x:.4f}"
+                    + (f" ± {x_std:.4f}" if x_std else "") + f" {p.unit}") if x is not None \
+                else "no estimate"
+            scalars = {"x": x, "x_std": x_std}
+        else:
+            text = f"{len(points)} points swept over {p.label}"
+            scalars = {}
+        self.studyResult.emit(StudyResult(
+            ok=bool(points), summary=text, scalars=scalars, points=points,
+            created_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
 
     def _on_failed(self, message: str) -> None:
         self.run_btn.setEnabled(True)

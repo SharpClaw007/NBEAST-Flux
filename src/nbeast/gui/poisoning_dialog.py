@@ -111,6 +111,8 @@ class _PoisonWorker(QObject):
 
 
 class PoisoningDialog(QDialog):
+    studyResult = Signal(object)   # a core.studies.StudyResult when the run completes
+
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self.main = main_window
@@ -282,6 +284,16 @@ class PoisoningDialog(QDialog):
             "Sm-149 ≈ −900 to −1300 pcm.</p>"
         )
         self.status.setText("Done.")
+        from datetime import datetime, timezone
+
+        from nbeast.core.studies import StudyResult
+
+        self.studyResult.emit(StudyResult(
+            ok=True, summary=f"Xe-135 {xe_worth:+.0f} pcm, Sm-149 {sm_worth:+.0f} pcm "
+            f"(total {total:+.0f})",
+            scalars={"xe_worth": xe_worth, "sm_worth": sm_worth, "total": total,
+                     "clean_k": self._k[0]},
+            created_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
 
     @Slot(str)
     def _on_failed(self, message: str) -> None:
