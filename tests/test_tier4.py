@@ -179,7 +179,12 @@ def test_fuel_material_picks_fissionable():
 
 # ---- integration (need data) ----------------------------------------------
 @requires_data
-def test_doppler_feedback_negative(tmp_path, monkeypatch):
+def test_doppler_coefficient_sign_and_magnitude(tmp_path, monkeypatch):
+    """Hotter fuel broadens U-238 capture resonances → lower k. Beyond the sign, the
+    294→900 K coefficient must land in a physical band: NBEAST's validated value is
+    −3.59 pcm/K (validation.md), and the Mosteller benchmark reference is −2.2 to
+    −4.2 pcm/K across enrichments. Assert −1.5 to −5.5 pcm/K — catches a broken or
+    wrong-magnitude Doppler, wide enough for CI-quality statistics."""
     import openmc
 
     from nbeast.core import templates
@@ -187,12 +192,15 @@ def test_doppler_feedback_negative(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     def keff(temp):
-        m = templates.pin_cell(batches=40, inactive=10, particles=1200, seed=1,
+        m = templates.pin_cell(batches=60, inactive=15, particles=3000, seed=1,
                                temperature=temp)
         with openmc.StatePoint(m.run(output=False, cwd=str(tmp_path))) as sp:
             return float(sp.keff.nominal_value)
 
-    assert keff(900.0) < keff(294.0)  # hotter fuel -> more capture -> lower k
+    k_cold, k_hot = keff(294.0), keff(900.0)
+    assert k_hot < k_cold                                   # sign
+    coef = (k_hot - k_cold) / (k_hot * k_cold) / (900.0 - 294.0) * 1e5   # pcm/K
+    assert -5.5 < coef < -1.5, f"Doppler coefficient out of band: {coef:.2f} pcm/K"
 
 
 @requires_data

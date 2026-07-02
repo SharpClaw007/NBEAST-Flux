@@ -44,6 +44,14 @@ def scale_density(mat: openmc.Material, fraction: float | None) -> openmc.Materi
     return mat
 
 
+def _material(mat, enrichment: float | None = None) -> openmc.Material:
+    """Resolve a material given as a catalog key *or* a ready-built ``openmc.Material``
+    (benchmarks pass exact compositions directly). Enrichment applies only to keys."""
+    if isinstance(mat, openmc.Material):
+        return mat
+    return materials.build(mat, enrichment=enrichment)
+
+
 def _poisoned(fuel: openmc.Material, poison: tuple[float, float] | None) -> openmc.Material:
     """Add equilibrium Xe-135/Sm-149 to a fuel if a (Xe, Sm) ratio pair is given."""
     if poison is None:
@@ -93,9 +101,9 @@ def pin_cell(
     enrichment-parametric fuels. ``moderator_density`` (fraction of nominal) drives
     void / moderation studies; ``poison`` = (Xe/U235, Sm/U235) adds equilibrium
     fission-product poisons."""
-    fuel = _poisoned(materials.build(fuel, enrichment=enrichment), poison)
-    clad = materials.build(clad)
-    mod = scale_density(materials.build(moderator), moderator_density)
+    fuel = _poisoned(_material(fuel, enrichment), poison)
+    clad = _material(clad)
+    mod = scale_density(_material(moderator), moderator_density)
 
     fuel_or = openmc.ZCylinder(r=fuel_radius)
     clad_ir = openmc.ZCylinder(r=clad_inner_radius)
@@ -149,9 +157,9 @@ def assembly(
     ``moderator_density`` (fraction of nominal) drives void / moderation studies;
     ``poison`` = (Xe/U235, Sm/U235) adds equilibrium fission-product poisons."""
     n_side = int(n_side)
-    fuel = _poisoned(materials.build(fuel, enrichment=enrichment), poison)
-    clad = materials.build(clad)
-    mod = scale_density(materials.build(moderator), moderator_density)
+    fuel = _poisoned(_material(fuel, enrichment), poison)
+    clad = _material(clad)
+    mod = scale_density(_material(moderator), moderator_density)
 
     fuel_or = openmc.ZCylinder(r=fuel_radius)
     clad_ir = openmc.ZCylinder(r=clad_inner_radius)

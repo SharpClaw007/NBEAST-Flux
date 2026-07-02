@@ -19,6 +19,7 @@ seed, and the model NBEAST itself builds from each template. Reproduce everythin
 | Quantity | NBEAST | Published / expected | Status |
 |---|---|---|---|
 | **Godiva k-eff** — ICSBEP **HEU-MET-FAST-001** (bare HEU sphere, r = 8.7407 cm) | **1.00000 ± 0.00044** | **1.0000 ± 0.0010** | ✅ exact (0 pcm) |
+| **Jezebel k-eff** — ICSBEP **PU-MET-FAST-001** (bare δ-phase Pu-Ga sphere, r = 6.3849 cm) | **0.99893 ± 0.00070** | **1.0000 ± 0.0020** | ✅ (−107 pcm, ~1.4σ) |
 | Godiva spectrum | 96.3 % fast (>0.1 MeV), ~0 % thermal, mean E = 1.46 MeV | hard fast spectrum | ✅ |
 | PWR pin cell k∞ — fresh 3.2 % UO₂ | 1.41303 ± 0.00086 | ≈ 1.40 | ✅ in range |
 | Pin cell spectrum | 19.8 % of flux thermal (<1 eV) | substantial thermal peak | ✅ |

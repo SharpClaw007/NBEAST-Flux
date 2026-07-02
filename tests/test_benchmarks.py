@@ -36,32 +36,62 @@ def test_godiva_critical(tmp_path, monkeypatch):
 
 
 @requires_data
-def test_assembly_reasonable(tmp_path, monkeypatch):
-    """A 3×3 reflective assembly has the same k_inf as a pin cell (~1.41)."""
+def test_jezebel_critical(tmp_path, monkeypatch):
+    """Faithful Jezebel (PU-MET-FAST-001): bare δ-phase Pu-Ga sphere, k_eff ~= 1.0.
+    Skips unless Pu + Ga data is present (not in the bundled H/O/U/Zr library)."""
     import openmc
 
-    from nbeast.core import benchmarks
+    from nbeast.core import benchmarks, materials
+
+    available = materials.available_names(_XS)
+    if not set(benchmarks.JEZEBEL_NUCLIDES) <= available:
+        pytest.skip("Jezebel needs Pu + Ga cross sections (not in the bundle)")
 
     monkeypatch.chdir(tmp_path)
-    model = benchmarks.assembly(n_side=3, particles=1000, batches=60, inactive=20)
-    sp_path = model.run(output=False)
-    with openmc.StatePoint(sp_path) as sp:
+    model = benchmarks.jezebel(particles=5000, batches=120, inactive=20)
+    with openmc.StatePoint(model.run(output=False)) as sp:
         k = sp.keff
-
-    assert 1.30 < k.nominal_value < 1.50, f"assembly k_inf out of range: {k}"
+    assert abs(k.nominal_value - 1.0) < 0.01, f"Jezebel k_eff off: {k}"
+    assert abs(k.nominal_value - 1.0) < 4 * k.std_dev + 0.005, f"Jezebel k_eff: {k}"
 
 
 @requires_data
-def test_pincell_reasonable(tmp_path, monkeypatch):
-    """UO2/water pin cell k_inf lands in the expected PWR range (~1.41)."""
+def test_pincell_regression(tmp_path, monkeypatch):
+    """UO2/water pin cell k∞. Regression pin to NBEAST's own validated output
+    (validation.md: 1.41303 ± 86 pcm) — NOT an external truth. A window of ±~1200 pcm
+    around 1.413 (was ±10000): tight enough that a few-percent density error or an
+    enrichment slip (3.2 → ~2.5 %, ≈ −4000 pcm) fails, loose enough for CI-quality σ."""
     import openmc
 
     from nbeast.core import benchmarks
 
     monkeypatch.chdir(tmp_path)
-    model = benchmarks.pincell(particles=2000, batches=80, inactive=20)
-    sp_path = model.run(output=False)
-    with openmc.StatePoint(sp_path) as sp:
+    model = benchmarks.pincell(particles=2000, batches=80, inactive=20, seed=1)
+    with openmc.StatePoint(model.run(output=False)) as sp:
         k = sp.keff
+    assert 1.401 < k.nominal_value < 1.425, f"pin-cell k∞ regression: {k}"
 
-    assert 1.30 < k.nominal_value < 1.50, f"pin-cell k_inf out of range: {k}"
+
+@requires_data
+def test_assembly_equals_pincell(tmp_path, monkeypatch):
+    """The internal-consistency check as a test: a reflective N×N assembly is an
+    infinite lattice of identical pins, so its k∞ must equal the single pin cell's to
+    within combined statistics (validation.md shows ~1 pcm). Catches lattice/boundary
+    regressions the loose range window would miss."""
+    import openmc
+
+    from nbeast.core import benchmarks
+
+    monkeypatch.chdir(tmp_path)
+    with openmc.StatePoint(
+        benchmarks.pincell(particles=3000, batches=80, inactive=20, seed=1).run(output=False)
+    ) as sp:
+        k_pin, s_pin = float(sp.keff.nominal_value), float(sp.keff.std_dev)
+    with openmc.StatePoint(
+        benchmarks.assembly(n_side=3, particles=1500, batches=80, inactive=20, seed=1).run(output=False)
+    ) as sp:
+        k_asm, s_asm = float(sp.keff.nominal_value), float(sp.keff.std_dev)
+
+    combined = (s_pin ** 2 + s_asm ** 2) ** 0.5
+    assert abs(k_pin - k_asm) < 4 * combined + 5e-4, (
+        f"assembly k∞ {k_asm:.5f} vs pin {k_pin:.5f} (Δ {(k_asm-k_pin)*1e5:.0f} pcm)")

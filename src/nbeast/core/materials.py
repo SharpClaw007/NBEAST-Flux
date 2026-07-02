@@ -68,13 +68,23 @@ def plutonium_metal(density: float = 19.84) -> openmc.Material:
     return m
 
 
+# Reactor-grade plutonium vector — typical spent-LWR fuel at ~42 GWd/t (World Nuclear
+# Association): 2/53/25/15/5 % Pu-238/239/240/241/242. The Pu isotope masses are within
+# ~2% of each other, so these published percentages are used directly as atom fractions
+# (consistent with the atom-fraction U/O below; <1% vector error).
+# https://world-nuclear.org/information-library/nuclear-fuel-cycle/fuel-recycling/plutonium
+_REACTOR_GRADE_PU = (("Pu238", 0.02), ("Pu239", 0.53), ("Pu240", 0.25),
+                     ("Pu241", 0.15), ("Pu242", 0.05))
+
+
 def mox(pu_fraction: float = 0.07, density: float = 10.4) -> openmc.Material:
-    """Mixed-oxide (U,Pu)O2 fuel — depleted U + reactor-grade Pu vector."""
-    m = openmc.Material(name=f"MOX ({pu_fraction * 100:g}% Pu)")
+    """Mixed-oxide (U,Pu)O2 fuel — depleted U + a genuine reactor-grade Pu vector
+    (typical spent-LWR plutonium, ~2/53/25/15/5 wt% Pu-238/239/240/241/242; WNA).
+    ``pu_fraction`` is the Pu atom fraction of the heavy metal."""
+    m = openmc.Material(name=f"MOX ({pu_fraction * 100:g}% reactor-grade Pu)")
     m.add_element("U", 1.0 - pu_fraction, enrichment=0.25)
-    m.add_nuclide("Pu239", pu_fraction * 0.93)
-    m.add_nuclide("Pu240", pu_fraction * 0.06)
-    m.add_nuclide("Pu241", pu_fraction * 0.01)
+    for nuclide, vec in _REACTOR_GRADE_PU:
+        m.add_nuclide(nuclide, pu_fraction * vec)
     m.add_element("O", 2.0)
     m.set_density("g/cm3", density)
     return m
