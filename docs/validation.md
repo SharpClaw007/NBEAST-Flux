@@ -115,6 +115,10 @@ thin visualization slice mesh instead of a global tally over-counts the source r
   feature.
 - **Dose and heating maps are validated for shape and trend** (correct attenuation /
   relative behaviour), not absolute calibration against a reference dose problem.
+- **Dose coefficients are interpolated log-log** (the ICRP-116 tabulation convention).
+  The filter default (linear-linear) deviates from log-log by up to ~3.5% in the
+  thermal range on the openmc-provided table; NBEAST sets log-log explicitly on every
+  dose tally (templates and CAD), locked in by tests.
 - **Absolute units require a reactor power and a fissile system.** The normalization is
   a fission-power normalization (κ-fission over the whole model); it lands on the right
   order of magnitude (see above) but is not calibrated against an absolute flux standard.

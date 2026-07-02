@@ -175,8 +175,13 @@ def add_dose_mesh(
     mesh.upper_right = (x1, y1, z_half)
 
     energies, coeffs = openmc.data.dose_coefficients(particle, geometry)
+    # ICRP-116 coefficients are tabulated on a coarse, decade-spanning energy grid and
+    # are conventionally interpolated log-log; the filter's default (linear-linear)
+    # measurably distorts the dose response, worst in the thermal/epithermal range.
+    dose_filter = openmc.EnergyFunctionFilter(energies, coeffs)
+    dose_filter.interpolation = "log-log"
     tally = openmc.Tally(name=name)
-    tally.filters = [openmc.MeshFilter(mesh), openmc.EnergyFunctionFilter(energies, coeffs)]
+    tally.filters = [openmc.MeshFilter(mesh), dose_filter]
     tally.scores = ["flux"]
     _append(model, tally)
     return mesh

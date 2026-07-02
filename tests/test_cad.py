@@ -31,6 +31,17 @@ def test_env_discovery_does_not_raise():
         assert result is None or isinstance(result, pathlib.Path)
 
 
+def test_cad_worker_dose_filters_are_log_log():
+    """_cad_run.py executes in the dagmc env (not importable here), so lock in the
+    ICRP dose-coefficient interpolation scheme at the source level: every dose tally
+    must use the log-log filter helper, never a bare EnergyFunctionFilter."""
+    src = (pathlib.Path(cad.__file__).parent / "_cad_run.py").read_text()
+    assert 'interpolation = "log-log"' in src
+    # both dose tallies route through the helper; no bare filter construction remains
+    assert src.count("_dose_filter()") >= 2
+    assert "EnergyFunctionFilter(energies_dose, coeffs_dose)]" not in src
+
+
 def test_conda_exe_and_channel_url():
     assert cad.conda_exe() is None or isinstance(cad.conda_exe(), pathlib.Path)
     assert cad.DEFAULT_CHANNEL_URL.startswith("https://")

@@ -69,10 +69,16 @@ def main() -> None:
     power_norm = openmc.Tally(name="power_norm")
     power_norm.scores = ["kappa-fission"]
 
-    # flux-to-dose-rate map (ICRP coefficients).
-    dose_mesh = openmc.Tally(name="dose_mesh")
+    # flux-to-dose-rate map (ICRP coefficients; log-log — the tabulation convention).
     energies_dose, coeffs_dose = openmc.data.dose_coefficients("neutron", "AP")
-    dose_mesh.filters = [openmc.MeshFilter(mesh), openmc.EnergyFunctionFilter(energies_dose, coeffs_dose)]
+
+    def _dose_filter():
+        f = openmc.EnergyFunctionFilter(energies_dose, coeffs_dose)
+        f.interpolation = "log-log"
+        return f
+
+    dose_mesh = openmc.Tally(name="dose_mesh")
+    dose_mesh.filters = [openmc.MeshFilter(mesh), _dose_filter()]
     dose_mesh.scores = ["flux"]
 
     # Full 3D fields for the volume renders — every score, so a CAD run can show each
@@ -88,8 +94,7 @@ def main() -> None:
     flux_volume.scores = ["flux", "fission", "absorption", "nu-fission", "heating"]
 
     dose_volume = openmc.Tally(name="dose_volume")
-    dose_volume.filters = [openmc.MeshFilter(vmesh),
-                           openmc.EnergyFunctionFilter(energies_dose, coeffs_dose)]
+    dose_volume.filters = [openmc.MeshFilter(vmesh), _dose_filter()]
     dose_volume.scores = ["flux"]
 
     tallies = openmc.Tallies(

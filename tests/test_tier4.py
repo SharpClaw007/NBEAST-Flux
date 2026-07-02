@@ -110,7 +110,10 @@ def test_dose_mesh_has_energy_function_filter():
     m = templates.pin_cell()
     tallies.add_dose_mesh(m, n=10)
     dose = [t for t in m.tallies if t.name == "dose_mesh"][0]
-    assert any(isinstance(f, openmc.EnergyFunctionFilter) for f in dose.filters)
+    filt = next(f for f in dose.filters if isinstance(f, openmc.EnergyFunctionFilter))
+    # ICRP-116 coefficients are interpolated log-log by convention. The filter default
+    # is linear-linear, which distorts thermal/epithermal dose — lock the scheme in.
+    assert filt.interpolation == "log-log"
 
 
 # ---- multigroup XS (data-free) --------------------------------------------
