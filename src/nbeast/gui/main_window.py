@@ -147,6 +147,13 @@ class MainWindow(QMainWindow):
         save_action.triggered.connect(self._persist_state)
         file_menu.addAction(save_action)
         file_menu.addSeparator()
+        welcome_action = QAction("Welcome screen…", self)
+        welcome_action.triggered.connect(self.show_welcome)
+        file_menu.addAction(welcome_action)
+        report_action = QAction("Report center…", self)
+        report_action.triggered.connect(self._open_report_center)
+        file_menu.addAction(report_action)
+        file_menu.addSeparator()
 
         export_action = QAction("Export report…", self)
         export_action.triggered.connect(self._on_export)
@@ -1514,6 +1521,7 @@ class MainWindow(QMainWindow):
 
     def _switch_project(self, project: Project) -> None:
         self.project = project
+        self._remember_recent_project(str(project.path))
         self.studies = self.studies.__class__(project)
         self.study_pane._store = self.studies
         self._restore_from_project()
@@ -1647,6 +1655,11 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("Depletion data isn't set up — opening the Data Library.")
             self._open_data_library(focus_category="Depletion")
+
+    def _open_report_center(self) -> None:
+        from .report_center import ReportCenterDialog
+
+        ReportCenterDialog(self, parent=self).exec()
 
     def _open_data_library(self, focus_category=None) -> None:
         from .data_library import DataLibraryDialog
@@ -1799,6 +1812,53 @@ class MainWindow(QMainWindow):
         )
         self.statusBar().showMessage(f"Report exported to {out_dir}")
         return out_dir
+
+    # ---- welcome screen + recent projects -----------------------------------
+    def _remember_recent_project(self, path: str) -> None:
+        try:
+            s = self._qsettings()
+            recent = [p for p in (s.value("recent_projects") or []) if p != path]
+            recent.insert(0, path)
+            s.setValue("recent_projects", recent[:8])
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _recent_projects(self) -> list[str]:
+        try:
+            import os as _os
+
+            recent = self._qsettings().value("recent_projects") or []
+            return [p for p in recent if _os.path.exists(p)]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def maybe_show_welcome(self) -> None:
+        """Show the welcome screen on launch unless the user opted out."""
+        s = self._qsettings()
+        show = s.value("show_welcome", True, type=bool)
+        if not show:
+            return
+        self.show_welcome()
+
+    def show_welcome(self) -> None:
+        from .welcome import WelcomeDialog
+
+        s = self._qsettings()
+        dialog = WelcomeDialog(self._recent_projects(), parent=self,
+                               show_startup=s.value("show_welcome", True, type=bool))
+        dialog.templateChosen.connect(self.set_template)
+        dialog.exampleChosen.connect(self.load_example)
+        dialog.projectChosen.connect(self._open_project_path)
+        dialog.newProjectRequested.connect(self._new_project)
+        dialog.openProjectRequested.connect(self._open_project)
+        dialog.exec()
+        s.setValue("show_welcome", dialog.show_on_startup)
+
+    def _open_project_path(self, path: str) -> None:
+        try:
+            self._switch_project(Project.open(path))
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"Could not open project: {exc}", "error")
 
     # ---- window state (geometry/layout persist across launches) -------------
     @staticmethod

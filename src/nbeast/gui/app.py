@@ -78,6 +78,7 @@ def main() -> int:
     app.setApplicationName("NBEAST")
     window = MainWindow()
     window.show()
+    window.maybe_show_welcome()
     return app.exec()
 
 
