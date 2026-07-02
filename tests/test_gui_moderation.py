@@ -83,30 +83,26 @@ def test_poisoning_dialog_gates_on_data_and_template(qapp, tmp_path):
     win.close()
 
 
-def test_studies_tree_gates_per_template(qapp, tmp_path):
-    """The analyses live under Studies in the Model Builder, greyed per template."""
+def test_add_study_kinds_gate_per_template(qapp, tmp_path):
+    """Analyses are persistent Studies; which *kinds* you can add is gated per template."""
     from nbeast.gui.main_window import CAD_TEMPLATE
 
     win = _win(tmp_path)
     # the Analysis menu is gone — the tools live in the Studies section of the tree
     assert not any("Analysis" in a.text() for a in win.menuBar().actions())
-    studies = win.model_tree.studies_root
-    items = {win.model_tree.node_kind(studies.child(i))[1]: studies.child(i)
-             for i in range(studies.childCount())}
-    assert set(items) == {"sweep", "moderation", "poisoning", "mgxs", "depletion"}
 
-    def enabled():
-        return {k: not item.isDisabled() for k, item in items.items()}
+    def addable():
+        return {k for k, _ in win.model_tree._addable_kinds}
 
     win.set_template("Pin cell")
-    assert all(enabled().values())                    # everything applies to a thermal pin
+    assert {"keff", "sweep", "search", "moderation", "poisoning", "mgxs", "depletion"} <= addable()
     win.set_template("Godiva")
-    e = enabled()
-    assert e["sweep"] and e["mgxs"] and not e["moderation"] and not e["poisoning"]
+    a = addable()
+    assert "sweep" in a and "mgxs" in a and "moderation" not in a and "poisoning" not in a
     win.set_template("Shield slab")
-    assert not any(enabled().values())                # fixed source: no analysis applies
+    assert addable() == {"keff"}                       # fixed source: only a plain run
     win.set_template(CAD_TEMPLATE)
-    assert not any(enabled().values())                # CAD: no parametric analysis
+    assert addable() == {"keff"}
     win.close()
 
 

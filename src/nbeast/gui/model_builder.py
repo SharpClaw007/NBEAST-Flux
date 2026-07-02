@@ -33,6 +33,10 @@ class ModelBuilderTree(QTreeWidget):
     historyLoadRequested = Signal(str)          # run id
     historyCompareRequested = Signal(str, str)  # run ids a, b
     historyDeleteRequested = Signal(list)       # run ids
+    studyAddRequested = Signal(str)             # study kind to create
+    studyRenameRequested = Signal(str)          # study id
+    studyDuplicateRequested = Signal(str)       # study id
+    studyDeleteRequested = Signal(str)          # study id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -42,8 +46,13 @@ class ModelBuilderTree(QTreeWidget):
         self.customContextMenuRequested.connect(self._context_menu)
         self.setUniformRowHeights(True)
 
+        self._addable_kinds: list[tuple[str, str]] = []   # (kind, label) for the add menu
         self.model_root = self._root("Model")
         self.studies_root = self._root("Studies")
+        self.add_study_item = QTreeWidgetItem(["＋ Add study…"])
+        self.add_study_item.setData(0, KIND_ROLE, ("add_study", None))
+        self.add_study_item.setForeground(0, self.palette().brush(self.foregroundRole()))
+        self.studies_root.addChild(self.add_study_item)
         self.results_root = self._root("Results")
         self.history_item = QTreeWidgetItem(["Saved runs"])
         self.history_item.setData(0, KIND_ROLE, ("root", "history"))
@@ -78,24 +87,22 @@ class ModelBuilderTree(QTreeWidget):
             self.model_root.addChild(group)
             group.setExpanded(True)
 
-    def set_studies(self, entries: list[tuple[str, str, str]]) -> None:
-        """entries = (key, label, tooltip). Rebuilt once; availability via set_study_enabled."""
-        self._clear_children(self.studies_root)
-        for key, label, tooltip in entries:
-            item = QTreeWidgetItem([label])
-            item.setData(0, KIND_ROLE, ("study", key))
-            item.setToolTip(0, tooltip)
-            self.studies_root.addChild(item)
+    def set_studies(self, instances: list[tuple[str, str, str]]) -> None:
+        """instances = (study_id, name, last_summary). Persistent study nodes, followed
+        by the always-present '＋ Add study…' node."""
+        self._clear_children(self.studies_root, keep=(self.add_study_item,))
+        for study_id, name, summary in instances:
+            item = QTreeWidgetItem([name])
+            item.setData(0, KIND_ROLE, ("study", study_id))
+            if summary:
+                item.setToolTip(0, summary)
+            self.studies_root.insertChild(self.studies_root.childCount() - 1, item)
         self.studies_root.setExpanded(True)
 
-    def set_study_enabled(self, key: str, enabled: bool, reason: str = "") -> None:
-        for i in range(self.studies_root.childCount()):
-            item = self.studies_root.child(i)
-            k = _kind(item)
-            if k and k[1] == key:
-                item.setDisabled(not enabled)
-                if reason and not enabled:
-                    item.setToolTip(0, reason)
+    def set_addable_kinds(self, kinds: list[tuple[str, str]]) -> None:
+        """(kind, label) pairs offered by the Add-study menu, per the current template."""
+        self._addable_kinds = list(kinds)
+        self.add_study_item.setDisabled(not kinds)
 
     def set_result_entries(self, entries: list[tuple[str, str]], enabled: bool) -> None:
         """entries = (label, score). The Saved-runs child is preserved."""
@@ -151,6 +158,22 @@ class ModelBuilderTree(QTreeWidget):
                 self.setCurrentItem(item)
                 return
 
+    def study_ids(self) -> list[str]:
+        out = []
+        for i in range(self.studies_root.childCount()):
+            k = _kind(self.studies_root.child(i))
+            if k and k[0] == "study":
+                out.append(k[1])
+        return out
+
+    def select_study(self, study_id: str) -> None:
+        for i in range(self.studies_root.childCount()):
+            item = self.studies_root.child(i)
+            k = _kind(item)
+            if k and k[0] == "study" and k[1] == study_id:
+                self.setCurrentItem(item)
+                return
+
     def node_kind(self, item: QTreeWidgetItem) -> tuple[str, object] | None:
         return _kind(item)
 
@@ -163,7 +186,36 @@ class ModelBuilderTree(QTreeWidget):
                 out.append(k[1])
         return out
 
+    def _add_study_menu(self, global_pos) -> None:
+        menu = QMenu(self)
+        for kind, label in self._addable_kinds:
+            menu.addAction(label).setData(kind)
+        chosen = menu.exec(global_pos)
+        if chosen is not None:
+            self.studyAddRequested.emit(chosen.data())
+
     def _context_menu(self, pos) -> None:
+        item = self.itemAt(pos)
+        global_pos = self.viewport().mapToGlobal(pos)
+        k = _kind(item) if item is not None else None
+
+        if k and k[0] == "add_study":
+            self._add_study_menu(global_pos)
+            return
+        if k and k[0] == "study":                       # a study instance
+            menu = QMenu(self)
+            rename = menu.addAction("Rename…")
+            duplicate = menu.addAction("Duplicate")
+            delete = menu.addAction("Delete")
+            chosen = menu.exec(global_pos)
+            if chosen is rename:
+                self.studyRenameRequested.emit(k[1])
+            elif chosen is duplicate:
+                self.studyDuplicateRequested.emit(k[1])
+            elif chosen is delete:
+                self.studyDeleteRequested.emit(k[1])
+            return
+
         ids = self._selected_history_ids()
         if not ids:
             return
@@ -174,7 +226,7 @@ class ModelBuilderTree(QTreeWidget):
         compare.setEnabled(len(ids) == 2)
         menu.addSeparator()
         delete = menu.addAction(f"Delete {len(ids)} run{'s' if len(ids) != 1 else ''}…")
-        chosen = menu.exec(self.viewport().mapToGlobal(pos))
+        chosen = menu.exec(global_pos)
         if chosen is load:
             self.historyLoadRequested.emit(ids[0])
         elif chosen is compare:

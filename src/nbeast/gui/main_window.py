@@ -105,6 +105,7 @@ class MainWindow(QMainWindow):
         self._power_w = 0.0       # reactor power (eigenvalue) for absolute units; 0 = relative
         self._source_strength = 0.0  # source rate n/s (fixed source) for absolute units
         self._total_batches = 0
+        self._active_study: str | None = None
         self._statepoint: str | None = None
         self._cross_sections = os.environ.get("OPENMC_CROSS_SECTIONS")
         self._starter_xml = self._cross_sections  # the bundled library ('reset' target)
@@ -309,20 +310,6 @@ class MainWindow(QMainWindow):
         self.batches_spin.setValue(batches)
         self.particles_spin.setValue(particles)
 
-    # The Studies section of the Model Builder (key, label, tooltip).
-    _STUDY_ENTRIES = (
-        ("sweep", "Parameter sweep / criticality search",
-         "Sweep a parameter or search for the value that makes k = target."),
-        ("moderation", "Moderation / reactivity curve",
-         "k, reactivity, and source multiplication vs moderator density."),
-        ("poisoning", "Reactor poisoning (Xe-135 / Sm-149)",
-         "Equilibrium fission-product worths, spectrum-consistent."),
-        ("mgxs", "Multigroup constants",
-         "Collapse the run into a complete few-group diffusion set."),
-        ("depletion", "Depletion / burnup",
-         "k vs burnup as the fuel depletes (needs a chain download)."),
-    )
-
     def _build_shell(self) -> None:
         """The COMSOL-style three-pane shell: Model Builder tree | settings pane |
         viewport tabs over a messages strip. Replaces the five-dock layout."""
@@ -343,9 +330,17 @@ class MainWindow(QMainWindow):
         self.model_tree.historyLoadRequested.connect(self._load_history_run)
         self.model_tree.historyCompareRequested.connect(self._compare_history_runs)
         self.model_tree.historyDeleteRequested.connect(self._delete_history_runs)
-        self.model_tree.set_studies(list(self._STUDY_ENTRIES))
+        self.model_tree.studyAddRequested.connect(self._add_study)
+        self.model_tree.studyRenameRequested.connect(self._rename_study)
+        self.model_tree.studyDuplicateRequested.connect(self._duplicate_study)
+        self.model_tree.studyDeleteRequested.connect(self._delete_study)
 
-        # -- middle: settings pane (header + the property editors) ----------------
+        # -- middle: settings pane (header + a stack: property editors | study pane) --
+        from PySide6.QtWidgets import QStackedWidget
+
+        from .studies import StudyPane, StudyStore
+
+        self.studies = StudyStore(self.project)
         self.settings_header = QLabel("Settings")
         header_font = self.settings_header.font()
         header_font.setBold(True)
@@ -356,13 +351,19 @@ class MainWindow(QMainWindow):
         self.properties.setHorizontalHeaderLabels(["Property", "Value"])
         self.properties.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.properties.verticalHeader().setVisible(False)
+        self.study_pane = StudyPane(self.studies)
+        self.study_pane.runRequested.connect(self._run_study)
+        self.study_pane.loadRequested.connect(self._load_study_run)
+        self._settings_stack = QStackedWidget()
+        self._settings_stack.addWidget(self.properties)      # page 0: model editors
+        self._settings_stack.addWidget(self.study_pane)      # page 1: study config
         settings_pane = QWidget()
         pane_layout = QVBoxLayout(settings_pane)
         pane_layout.setContentsMargins(8, 8, 8, 8)
         pane_layout.setSpacing(6)
         pane_layout.addWidget(self.settings_header)
         pane_layout.addWidget(self.settings_hint)
-        pane_layout.addWidget(self.properties, 1)
+        pane_layout.addWidget(self._settings_stack, 1)
 
         # -- right: viewport tabs over the messages strip --------------------------
         from .geometry_view import GeometryView
@@ -406,6 +407,8 @@ class MainWindow(QMainWindow):
         self._preview_timer.timeout.connect(self._refresh_geometry_preview)
         self.doc.changed.connect(self._preview_timer.start)
         self._refresh_geometry_preview()
+        self._ensure_default_study()
+        self._refresh_studies()
         self.tabs.setCurrentWidget(self.geometry_view)
 
     # ---- document delegation ------------------------------------------------
@@ -646,9 +649,14 @@ class MainWindow(QMainWindow):
             return
         what, payload = kind
         if what == "group":
+            self._settings_stack.setCurrentWidget(self.properties)
             self._show_group_editors(str(payload))
         elif what == "study":
-            self._open_study(str(payload))
+            self._show_study(str(payload))
+        elif what == "add_study":
+            from PySide6.QtGui import QCursor
+
+            self.model_tree._add_study_menu(QCursor.pos())
         elif what == "result":
             self._on_result_selected(str(payload))
         # history nodes act on double-click / context menu (selection stays cheap)
@@ -658,16 +666,85 @@ class MainWindow(QMainWindow):
         if kind and kind[0] == "history":
             self._load_history_run(str(kind[1]))
 
-    def _open_study(self, key: str) -> None:
+    # ---- studies (persistent analyses) --------------------------------------
+    def _ensure_default_study(self) -> None:
+        """Every project has at least the default k-eff study, so Run has a home."""
+        if not any(c.kind == "keff" for c in self.studies.configs()):
+            self.studies.add("keff", self._current_settings())
+
+    def _refresh_studies(self) -> None:
+        instances = []
+        for config in self.studies.configs():
+            result = self.studies.get_result(config.study_id)
+            summary = result.summary if result else "not run yet"
+            instances.append((config.study_id, config.name, summary))
+        self.model_tree.set_studies(instances)
+        self._update_analysis_availability()
+
+    def _show_study(self, study_id: str) -> None:
+        config = self.studies.get(study_id)
+        if config is None:
+            return
+        self.settings_header.setText(f"Study ▸ {config.name}")
+        self.settings_hint.hide()
+        self.study_pane.set_param_choices(
+            [(p.key, f"{p.label} ({p.unit})" if p.unit else p.label)
+             for p in (self.spec.parameters if self.spec else [])])
+        self.study_pane.show_study(config)
+        self._settings_stack.setCurrentWidget(self.study_pane)
+
+    def _add_study(self, kind: str) -> None:
+        config = self.studies.add(kind, self._current_settings())
+        self._refresh_studies()
+        self.model_tree.select_study(config.study_id)
+        self._show_study(config.study_id)
+
+    def _rename_study(self, study_id: str) -> None:
+        config = self.studies.get(study_id)
+        if config is None:
+            return
+        name, ok = QInputDialog.getText(self, "Rename study", "Name:", text=config.name)
+        if ok and name.strip():
+            self.studies.rename(study_id, name.strip())
+            self._refresh_studies()
+
+    def _duplicate_study(self, study_id: str) -> None:
+        new = self.studies.duplicate(study_id)
+        self._refresh_studies()
+        if new is not None:
+            self.model_tree.select_study(new.study_id)
+            self._show_study(new.study_id)
+
+    def _delete_study(self, study_id: str) -> None:
+        self.studies.delete(study_id)
+        self._refresh_studies()
+
+    def _run_study(self, study_id: str) -> None:
+        config = self.studies.get(study_id)
+        if config is None:
+            return
+        self._active_study = study_id
+        if config.kind == "keff":
+            self.start_run()                       # the run archives + we snapshot on finish
+            return
+        # The richer analyses keep their (working) tool UIs, now launched from the
+        # persistent study and seeded from its saved config; result persistence for
+        # these lands in G4. Config already persisted by the pane.
         opener = {
-            "sweep": self._open_sweep,
-            "moderation": self._open_moderation,
-            "poisoning": self._open_poisoning,
-            "mgxs": self._open_mgxs,
-            "depletion": self._open_depletion,
-        }.get(key)
+            "sweep": self._open_sweep, "search": self._open_sweep,
+            "moderation": self._open_moderation, "poisoning": self._open_poisoning,
+            "mgxs": self._open_mgxs, "depletion": self._open_depletion,
+        }.get(config.kind)
         if opener is not None:
             opener()
+
+    def _load_study_run(self, study_id: str) -> None:
+        """Reload a keff study's most recent archived run into the viewports."""
+        runs = [r for r in self.project.runs]
+        if runs:
+            self._load_history_run(runs[-1].id)
+        else:
+            self._log("No saved run for this study yet — run it first.")
 
     def _show_group_editors(self, group: str) -> None:
         self.settings_header.setText(f"Model ▸ {group}")
@@ -987,6 +1064,34 @@ class MainWindow(QMainWindow):
         if not result.cancelled and result.statepoint:
             self._load_results(result.statepoint)
             self._archive_run(result)
+            self._snapshot_keff_study(result)
+
+    def _snapshot_keff_study(self, result) -> None:
+        """Persist a k-eff run's headline result onto the active (or default) study."""
+        from datetime import datetime, timezone
+
+        from nbeast.core.studies import StudyResult
+
+        study_id = self._active_study
+        if study_id is None or self.studies.get(study_id) is None \
+                or self.studies.get(study_id).kind != "keff":
+            study_id = next((c.study_id for c in self.studies.configs() if c.kind == "keff"),
+                            None)
+        if study_id is None:
+            return
+        diag = self.last_diagnostics
+        if result.keff is not None:
+            summary = f"k = {result.keff:.5f} ± {result.keff_std:.5f}"
+            scalars = {"keff": result.keff, "keff_std": result.keff_std}
+        else:
+            summary = f"fixed-source run ({len(result.batches)} batches)"
+            scalars = {}
+        self.studies.set_result(study_id, StudyResult(
+            ok=True, summary=summary, scalars=scalars,
+            warnings=list(diag.warnings) if diag else [],
+            created_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
+        self._refresh_studies()
+        self.study_pane.refresh_result()
 
     def _load_results(self, statepoint: str, cad_overlay=None) -> None:
         """Populate spectrum + flux/fission views from a finished run (defensive).
@@ -1409,9 +1514,13 @@ class MainWindow(QMainWindow):
 
     def _switch_project(self, project: Project) -> None:
         self.project = project
+        self.studies = self.studies.__class__(project)
+        self.study_pane._store = self.studies
         self._restore_from_project()
+        self._ensure_default_study()
         self._refresh_tree()
         self._refresh_history()
+        self._refresh_studies()
         self._update_title()
         self.statusBar().showMessage(f"Project: {project.path}")
 
@@ -1435,18 +1544,17 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Raw export failed: {exc}")
 
     def _update_analysis_availability(self) -> None:
-        """Grey out Studies entries that don't apply to the current template."""
+        """Offer only the study kinds that apply to the current template in Add-study."""
         if not hasattr(self, "model_tree"):
             return
+        from nbeast.core import studies as core_studies
+
         spec = self.spec
         eigen = spec is not None and not self._is_fixed_source
         moderated = eigen and any(r.key == "moderator" for r in spec.material_roles)
-        eig_reason = "Needs an eigenvalue template (not Custom CAD or the fixed-source shield)."
-        mod_reason = "Needs a moderated thermal lattice (pin cell or assembly)."
-        for key in ("sweep", "mgxs", "depletion"):
-            self.model_tree.set_study_enabled(key, eigen, eig_reason)
-        for key in ("moderation", "poisoning"):
-            self.model_tree.set_study_enabled(key, moderated, mod_reason)
+        kinds = core_studies.available_kinds(eigenvalue=eigen, moderated=moderated)
+        self.model_tree.set_addable_kinds(
+            [(k, core_studies.STUDY_KINDS[k].label) for k in kinds])
 
     def _analysis_needs_template(self) -> bool:
         """The Analysis tools (sweep, multigroup, depletion) are eigenvalue-only —
