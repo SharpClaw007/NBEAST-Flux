@@ -139,11 +139,13 @@ class PoisoningDialog(QDialog):
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
         self.level_combo = QComboBox()
-        # Default to a realistic operating flux; saturation is the conservative bound.
-        self.level_combo.addItem("Equilibrium at φ = 3×10¹³ n/cm²·s (typical)", 3e13)
-        self.level_combo.addItem("Equilibrium at φ = 1×10¹³ n/cm²·s", 1e13)
-        self.level_combo.addItem("Equilibrium at φ = 1×10¹⁴ n/cm²·s", 1e14)
-        self.level_combo.addItem("Saturation (max Xe — conservative upper bound)", None)
+        # Default = saturation: an operating reactor is Xe-saturated within hours, so this
+        # is the representative worth. With spectrum-averaged σ it is flux-independent and
+        # sidesteps the thermal-vs-total flux ambiguity. The finite options are total flux
+        # (for sub-saturation / startup states), paired with the full-spectrum σ.
+        self.level_combo.addItem("Operating equilibrium — saturated (recommended)", None)
+        self.level_combo.addItem("Sub-saturation at total φ = 1×10¹³ n/cm²·s", 1e13)
+        self.level_combo.addItem("Sub-saturation at total φ = 1×10¹⁴ n/cm²·s", 1e14)
         self.batches_spin = QSpinBox()
         self.batches_spin.setRange(20, 100_000)
         self.batches_spin.setValue(80)

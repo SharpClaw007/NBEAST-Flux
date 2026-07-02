@@ -108,13 +108,16 @@ M = 1/(1−k), which diverges at the critical crossing.
 
 ### Fission-product poisoning (Xe-135 / Sm-149)
 
-With Xe-135/Sm-149 data added, the equilibrium worths on the pin cell are **Sm-149
-≈ −960 pcm** (reference −900 to −1300) and **Xe-135 ≈ −3230 pcm** at saturation
-(reference −2600 to −3000 for a typical core). Sm lands squarely in range; Xe is
-slightly high, honestly so — the estimate uses the *saturation* (maximum) xenon level
-in an *infinite* pin lattice, both of which raise the worth relative to a leaky
-operating core. Choosing a finite operating flux in the dialog brings Xe down toward
-the typical range. Poisoning needs a Xe-135/Sm-149 download (not in the bundle).
+Poisoning is now **spectrum-consistent**: the clean run's flux spectrum is folded with
+the Xe/Sm/U-235 pointwise data to get spectrum-averaged one-group cross sections
+(here σ_f(U235) ≈ 79 b, σ_a(Xe135) ≈ 3.8×10⁵ b, σ_a(Sm149) ≈ 9.6×10³ b), which set the
+equilibrium concentrations instead of 2200 m/s constants. The saturated-equilibrium
+worths on the pin cell are then **Xe-135 ≈ −2831 pcm** (reference −2600 to −3000 — now
+in range, down from −3230 with the old 2200 m/s + saturation estimate) and **Sm-149
+≈ −736 pcm** (reference −900 to −1300 — the spectrum-averaged σ_f/σ_a(Sm) ratio trims it
+slightly low). Saturation is the default because an operating reactor is Xe-saturated
+within hours; sub-saturation (total-flux) options are offered for startup states.
+Poisoning needs a Xe-135/Sm-149 download (not in the bundle).
 
 ### Criticality search statistics
 

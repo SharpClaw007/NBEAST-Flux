@@ -32,6 +32,29 @@ def _eigenvalue_settings(
     return s
 
 
+# Compressed-liquid water density (kg/m³) vs temperature (K) at PWR pressure (15.5 MPa),
+# from the NIST Chemistry WebBook (IAPWS-IF97). Basis for the moderator-density feedback
+# term of a full isothermal temperature coefficient.
+_WATER_RHO_PWR = {
+    300: 1003.4, 350: 980.47, 400: 945.13, 450: 899.57, 500: 842.78,
+    550: 769.71, 575: 722.66, 600: 661.14, 615: 608.11,
+}
+
+
+def water_density_ratio(temperature: float, reference: float = 294.0) -> float:
+    """ρ(T)/ρ(reference) for water at PWR pressure (15.5 MPa), interpolated from the
+    NIST IAPWS table. Multiplies the moderator's nominal density to couple it to
+    temperature — the density-feedback part of the isothermal coefficient that a
+    constant-density Doppler run omits."""
+    import numpy as np
+
+    temps = sorted(_WATER_RHO_PWR)
+    rhos = [_WATER_RHO_PWR[t] for t in temps]
+    rho_t = float(np.interp(float(temperature), temps, rhos))
+    rho_ref = float(np.interp(float(reference), temps, rhos))
+    return rho_t / rho_ref if rho_ref > 0 else 1.0
+
+
 def scale_density(mat: openmc.Material, fraction: float | None) -> openmc.Material:
     """Scale a material's density to ``fraction`` of nominal — the knob for void /
     moderation studies (fraction 0 ≈ voided, 1 = nominal). Floored to a trace so the

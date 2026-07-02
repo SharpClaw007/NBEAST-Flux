@@ -60,8 +60,8 @@ def test_poisoning_dialog_gates_on_data_and_template(qapp, tmp_path):
     # bundled library lacks Xe/Sm → run disabled, download offered
     assert not dialog.run_btn.isEnabled()
     assert not dialog.download_btn.isHidden()
-    # default is a finite operating flux (not saturation); saturation is the last option
-    assert dialog.level_combo.currentData() == 3e13
+    # default is the (flux-independent) saturated operating equilibrium
+    assert dialog.level_combo.currentData() is None
     # the worker builds the three cases: clean, +Sm, +Xe+Sm
     from nbeast.gui.poisoning_dialog import _PoisonWorker
 
