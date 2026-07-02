@@ -84,6 +84,26 @@ def _poisoned(fuel: openmc.Material, poison: tuple[float, float] | None) -> open
     return poisons.add_to_fuel(fuel, poison[0], poison[1])
 
 
+# Continuous-energy temperatures the bundled library carries (K); other libraries may
+# add more. Used only to describe the nearest-snapping to the user.
+_BUNDLE_DATA_TEMPS = (250.0, 294.0, 600.0, 900.0, 1200.0)
+
+
+def temperature_note(temperature: float | None) -> str:
+    """Plain-language note on how a requested temperature is treated: resonance
+    (continuous-energy) data snaps to the nearest available grid point, and the bundled
+    H-in-H₂O thermal-scattering kernel is 294 K-only. Empty string when no temperature
+    is set. Best-effort for the bundle grid — a downloaded library may interpolate."""
+    if temperature is None:
+        return ""
+    nearest = min(_BUNDLE_DATA_TEMPS, key=lambda t: abs(t - float(temperature)))
+    parts = []
+    if abs(nearest - float(temperature)) > 1.0:
+        parts.append(f"resonance data snapped to {nearest:g} K (requested {float(temperature):g} K)")
+    parts.append("H-in-H₂O kernel evaluated at 294 K")
+    return "data note: " + "; ".join(parts)
+
+
 def _apply_temperature(settings: openmc.Settings, temperature: float | None) -> None:
     """Run every cell at ``temperature`` (K) — the knob for Doppler-feedback studies.
     Left at the data's default when None.
@@ -113,6 +133,7 @@ def pin_cell(
     clad_outer_radius: float = 0.46,
     moderator_density: float | None = None,
     poison: tuple[float, float] | None = None,
+    couple_density: bool = False,
     batches: int = 100,
     inactive: int = 20,
     particles: int = 2000,
@@ -123,10 +144,15 @@ def pin_cell(
     and moderator are chosen by material-catalog key; ``enrichment`` applies only to
     enrichment-parametric fuels. ``moderator_density`` (fraction of nominal) drives
     void / moderation studies; ``poison`` = (Xe/U235, Sm/U235) adds equilibrium
-    fission-product poisons."""
+    fission-product poisons. ``couple_density`` scales the moderator density to the
+    temperature via the PWR-pressure water curve — turning a constant-density (Doppler)
+    temperature study into a full *isothermal* coefficient."""
     fuel = _poisoned(_material(fuel, enrichment), poison)
     clad = _material(clad)
-    mod = scale_density(_material(moderator), moderator_density)
+    density_fraction = moderator_density
+    if couple_density and temperature is not None and density_fraction is None:
+        density_fraction = water_density_ratio(temperature)
+    mod = scale_density(_material(moderator), density_fraction)
 
     fuel_or = openmc.ZCylinder(r=fuel_radius)
     clad_ir = openmc.ZCylinder(r=clad_inner_radius)
@@ -170,6 +196,7 @@ def assembly(
     clad_outer_radius: float = 0.46,
     moderator_density: float | None = None,
     poison: tuple[float, float] | None = None,
+    couple_density: bool = False,
     batches: int = 100,
     inactive: int = 20,
     particles: int = 5000,
@@ -178,11 +205,15 @@ def assembly(
 ) -> openmc.model.Model:
     """An N×N square lattice of identical pins (materials chosen by catalog key).
     ``moderator_density`` (fraction of nominal) drives void / moderation studies;
-    ``poison`` = (Xe/U235, Sm/U235) adds equilibrium fission-product poisons."""
+    ``poison`` = (Xe/U235, Sm/U235) adds equilibrium fission-product poisons;
+    ``couple_density`` couples moderator density to temperature (isothermal coefficient)."""
     n_side = int(n_side)
     fuel = _poisoned(_material(fuel, enrichment), poison)
     clad = _material(clad)
-    mod = scale_density(_material(moderator), moderator_density)
+    density_fraction = moderator_density
+    if couple_density and temperature is not None and density_fraction is None:
+        density_fraction = water_density_ratio(temperature)
+    mod = scale_density(_material(moderator), density_fraction)
 
     fuel_or = openmc.ZCylinder(r=fuel_radius)
     clad_ir = openmc.ZCylinder(r=clad_inner_radius)

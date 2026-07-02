@@ -31,6 +31,36 @@ def test_temperature_sets_settings():
     assert templates.pin_cell().settings.temperature in (None, {})
 
 
+def test_water_density_couples_to_temperature():
+    """couple_density scales the moderator to the PWR-pressure water curve — the
+    density-feedback term of the isothermal coefficient a constant-density run omits."""
+    from nbeast.core import templates
+
+    # ρ(600 K)/ρ(294 K) at 15.5 MPa ≈ 661/998 ≈ 0.66
+    ratio = templates.water_density_ratio(600.0)
+    assert 0.60 < ratio < 0.72
+    assert templates.water_density_ratio(294.0) == pytest.approx(1.0, abs=0.02)
+
+    hot = templates.pin_cell(temperature=600.0, couple_density=True, batches=10)
+    cold = templates.pin_cell(temperature=294.0, couple_density=True, batches=10)
+    mod_hot = next(m for m in hot.materials if "Water" in m.name)
+    mod_cold = next(m for m in cold.materials if "Water" in m.name)
+    assert mod_hot.density < 0.75 * mod_cold.density        # coupled: hotter → less dense
+    # default (Doppler-only) leaves moderator density at nominal
+    plain = templates.pin_cell(temperature=600.0, batches=10)
+    assert next(m for m in plain.materials if "Water" in m.name).density == pytest.approx(1.0)
+
+
+def test_temperature_note_describes_snapping():
+    from nbeast.core import templates
+
+    assert templates.temperature_note(None) == ""
+    assert "294" in templates.temperature_note(294.0)          # kernel note always
+    snapped = templates.temperature_note(700.0)                 # 700 → nearest grid 600
+    assert "snapped to 600" in snapped and "294" in snapped
+    assert "snapped" not in templates.temperature_note(600.0)   # 600 is on the grid
+
+
 def test_temperature_is_a_template_parameter():
     from nbeast.core import specs
 

@@ -827,6 +827,15 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Done — k = {k_txt} ± {result.keff_std:.5f}")
         else:
             self.statusBar().showMessage(f"Done — fixed-source run ({len(result.batches)} batches)")
+        # Surface how the requested temperature was treated (nearest-snapping + the
+        # 294 K-pinned thermal kernel) so the approximation isn't silent.
+        temperature = self._param_values.get(self._template, {}).get("temperature")
+        if temperature is not None:
+            from nbeast.core import templates
+
+            note = templates.temperature_note(temperature)
+            if note:
+                self.statusBar().showMessage(f"{self.statusBar().currentMessage()}  ({note})")
         if not result.cancelled and result.statepoint:
             self._load_results(result.statepoint)
             self._archive_run(result)

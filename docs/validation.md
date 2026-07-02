@@ -70,10 +70,19 @@ range:
 | 600 K | 1.39978 ± 0.00114 |
 | 900 K | 1.39046 ± 0.00121 |
 
-→ **−3.59 pcm/K** over 294→900 K. This is a *constant-density* fuel-temperature
-(Doppler + spectral) coefficient — NBEAST does not yet vary moderator density with
-temperature, so it excludes the moderator-density feedback that a full isothermal
-coefficient would add.
+→ **−3.59 pcm/K** over 294→900 K. This is the *constant-density* fuel-temperature
+(Doppler + spectral) coefficient. For a full **isothermal** coefficient, `pin_cell`
+and `assembly` accept `couple_density=True`, which scales the moderator density with
+temperature along the PWR-pressure (15.5 MPa) water curve (NIST IAPWS data) — adding
+the (strongly negative) moderator-density feedback on top of Doppler.
+
+Two honest caveats on temperature. First, resonance (continuous-energy) data snaps to
+the nearest bundled grid point (250 / 294 / 600 / 900 / 1200 K) and the H-in-H₂O
+thermal-scattering kernel is evaluated at 294 K only — surfaced in the run status as a
+"data note", not silent. True temperature *interpolation* needs a multi-temperature
+thermal-scattering library (a user download); the bundle carries one kernel temperature.
+Second, the Doppler coefficient is validated externally against the Mosteller benchmark
+(above), where the defect is kernel-insensitive.
 
 ### Spectra and shielding
 
