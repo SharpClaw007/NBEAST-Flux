@@ -143,7 +143,9 @@ class MgxsDialog(QDialog):
         self.export_csv_btn.setEnabled(True)
         self.export_h5_btn.setEnabled(True)
         n = self._table["n_groups"]
-        self.status.setText(f"{n}-group constants for {len(self._table['domains'])} domains.")
+        self.status.setText(
+            f"{n}-group constants for {len(self._table['domains'])} domains."
+            + getattr(self, "_matrix_note", ""))
 
     def _on_failed(self, message: str) -> None:
         self.run_btn.setEnabled(True)
@@ -151,15 +153,22 @@ class MgxsDialog(QDialog):
         self.status.setText(f"Error: {message}")
 
     def _populate(self, table: dict) -> None:
-        types = table["mgxs_types"]
+        # The grid shows scalar (per-group) constants + the derived diffusion
+        # coefficient; group-to-group matrices (e.g. the ν-scatter matrix) are
+        # square, so they don't fit a per-group row — they go to the export.
+        first = next(iter(table["domains"].values()), {})
+        scalar_types = [mt for mt in table["mgxs_types"] if not first.get(mt, {}).get("matrix")]
+        if "diffusion" in first:
+            scalar_types = scalar_types + ["diffusion"]
+        matrix_types = [mt for mt in table["mgxs_types"] if first.get(mt, {}).get("matrix")]
         bounds = table["group_bounds_eV"]
-        columns = ["domain", "group", "E_low (eV)", "E_high (eV)"] + list(types)
+        columns = ["domain", "group", "E_low (eV)", "E_high (eV)"] + list(scalar_types)
         rows = []
         for domain, per_type in table["domains"].items():
             for g in range(table["n_groups"]):
                 lo, hi = bounds[g]
                 row = [domain, str(g + 1), f"{lo:.3g}", f"{hi:.3g}"]
-                row += [f"{per_type[mt]['mean'][g]:.5g}" for mt in types]
+                row += [f"{per_type[mt]['mean'][g]:.5g}" for mt in scalar_types]
                 rows.append(row)
         self.table.setColumnCount(len(columns))
         self.table.setHorizontalHeaderLabels(columns)
@@ -167,6 +176,10 @@ class MgxsDialog(QDialog):
         for r, row in enumerate(rows):
             for c, value in enumerate(row):
                 self.table.setItem(r, c, QTableWidgetItem(value))
+        self._matrix_note = (
+            f"  + {', '.join(matrix_types)} (group-to-group) in the export"
+            if matrix_types else ""
+        )
 
     def _export(self, fmt: str) -> None:
         if not self._table:

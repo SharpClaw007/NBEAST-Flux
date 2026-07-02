@@ -71,6 +71,14 @@ Two-group (CASMO-2) constants collapsed from the pin cell are physically correct
 fission spectrum χ is entirely in the fast group (1.000 / 0.000), and both absorption
 and ν-fission are far larger in the thermal group, as expected for low-enriched UO₂.
 
+The exported set is a **complete diffusion set** — scalar constants (total, transport,
+absorption, fission, ν-fission, χ), the diffusion coefficient D = 1/(3Σtr), and the P0
+ν-scatter matrix — so it can actually drive a diffusion solve. Closing the loop: a
+**two-group infinite-medium solve of the exported constants** (consistent P0 balance,
+removal = absorption + out-scatter) gives **k∞ = 1.4135 against the Monte Carlo
+1.4090** — agreement to **~450 pcm**, the expected two-group collapse/P0 consistency
+error, confirming the constants are self-consistent and usable, not just tabulated.
+
 ### Moderation curve
 
 Sweeping the pin cell's moderator density from voided to flooded traces the classic

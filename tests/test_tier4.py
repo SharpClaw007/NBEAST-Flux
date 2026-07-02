@@ -294,7 +294,52 @@ def test_mgxs_generation(tmp_path, monkeypatch):
     table = mgxs_gen.load_constants(lib, sp)
     assert table["n_groups"] == 2
     assert any("UO2" in d for d in table["domains"])
-    nuf = next(table["domains"][d]["nu-fission"]["mean"] for d in table["domains"] if "UO2" in d)
-    assert nuf[1] > nuf[0]  # thermal ν-fission exceeds fast for UO2
+    uo2 = next(table["domains"][d] for d in table["domains"] if "UO2" in d)
+    assert uo2["nu-fission"]["mean"][1] > uo2["nu-fission"]["mean"][0]  # thermal ν-fission ≫ fast
+    # complete diffusion set: transport, diffusion coefficient, and a 2×2 scatter matrix
+    assert "transport" in uo2 and "diffusion" in uo2
+    assert uo2["nu-scatter matrix"]["matrix"] is True
+    assert len(uo2["nu-scatter matrix"]["mean"]) == 2 and len(uo2["nu-scatter matrix"]["mean"][0]) == 2
     out = mgxs_gen.export_constants(table, tmp_path / "mgxs.csv")
     assert out.exists() and out.read_text().count("\n") > 5
+    assert "1->2" in out.read_text()   # scatter matrix present in the CSV
+
+
+@requires_data
+def test_two_group_constants_reproduce_kinf(tmp_path, monkeypatch):
+    """The exported few-group set is a *usable* diffusion set: an infinite-medium
+    two-group solve (leakage-free, so k∞) from the homogenized constants reproduces the
+    continuous-energy Monte Carlo k∞. This is the claim that makes 'diffusion codes
+    consume this' true — a single flux-weighted domain over the whole pin cell.
+    """
+    import numpy as np
+
+    from nbeast.core import mgxs_gen, results, templates
+
+    monkeypatch.chdir(tmp_path)
+    m = templates.pin_cell(batches=80, inactive=20, particles=4000, seed=3)
+    lib = mgxs_gen.build_library(m, structure="CASMO-2", domain_type="universe")
+    sp = m.run(output=False, cwd=str(tmp_path))
+    table = mgxs_gen.load_constants(lib, sp)
+    with results.Results(sp) as r:
+        k_mc = float(r.keff.nominal_value)
+
+    per = next(iter(table["domains"].values()))   # one homogenized set for the whole cell
+    absorption = np.asarray(per["absorption"]["mean"], float)
+    nufiss = np.asarray(per["nu-fission"]["mean"], float)
+    chi = np.asarray(per["chi"]["mean"], float)
+    scatter = np.asarray(per["nu-scatter matrix"]["mean"], float)  # [g_in][g_out]
+    chi = chi / chi.sum() if chi.sum() > 0 else chi
+
+    # Infinite-medium eigenproblem M φ = (1/k) χ νΣfᵀ φ. Use the *consistent* P0 balance
+    # (removal = absorption + out-scatter), not the "total" XS — openmc.mgxs 'total'
+    # carries angular moments that don't close a P0 diffusion balance. Removal operator:
+    #   M[g][g]  = Σa,g + Σ_g' Σs(g→g')      (absorption + total out-scatter)
+    #   M[g][g'] = −Σs(g'→g)                  (in-scatter), so M = diag(Σa+rowΣs) − Sᵀ.
+    removal = np.diag(absorption + scatter.sum(axis=1)) - scatter.T
+    fission = np.outer(chi, nufiss)
+    k = float(np.max(np.linalg.eigvals(np.linalg.solve(removal, fission)).real))
+
+    # Agreement to ~1% (≈450 pcm here) — the known two-group collapse/P0 consistency
+    # error, not a pipeline error. This is the row that makes the diffusion claim real.
+    assert abs(k - k_mc) < 1.0e-2, f"two-group k∞ {k:.5f} vs MC {k_mc:.5f}"

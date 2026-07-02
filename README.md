@@ -87,8 +87,10 @@ arm64 DAGMC/MOAB toolchain that doesn't exist anywhere upstream. See
   map, and a **flux-to-dose-rate** map (ICRP coefficients), all in the Results panel.
 - **Temperature / Doppler control** — set the temperature and watch reactivity respond; sweep it for
   the **temperature reactivity coefficient** (cross sections interpolated to the bundled data grid).
-- **Multigroup cross sections** — collapse a run into **few-group constants** (CASMO-2/4/8/16:
-  total, absorption, fission, ν-fission, χ) for a diffusion code, exportable to CSV/HDF5.
+- **Multigroup cross sections** — collapse a run into a **complete few-group diffusion set**
+  (CASMO-2/4/8/16: total, transport, absorption, fission, ν-fission, χ, the diffusion
+  coefficient, and the P0 ν-scatter matrix), exportable to CSV/HDF5. Validated: a two-group
+  infinite-medium solve of the exported constants reproduces the Monte Carlo k∞ to ~1%.
 - **Depletion / burnup** *(optional add-on)* — track **k-effective vs burnup** as fuel depletes;
   needs a downloadable depletion chain + library (guided setup), so it stays out of the core bundle.
 - **Simple ↔ Advanced** — Simple mode picks run quality for you; Advanced exposes batches and
