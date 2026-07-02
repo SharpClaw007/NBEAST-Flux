@@ -57,9 +57,11 @@ def heu_metal_godiva() -> openmc.Material:
 
 
 def plutonium_metal(density: float = 19.84) -> openmc.Material:
-    """Plutonium metal (weapons-grade) — the bare fast-metal sphere analogue of Godiva
-    (cf. the Jezebel Pu-239 criticality benchmark). Uses only Pu data."""
-    m = openmc.Material(name="Plutonium metal")
+    """Plutonium metal — generic weapons-grade α-phase Pu (94/6 Pu-239/240), a bare
+    fast-metal building block. This is *not* the Jezebel benchmark (that is δ-phase
+    Pu–Ga at 15.61 g/cc — see :func:`nbeast.core.benchmarks.jezebel`); built at
+    Jezebel's radius it gives the wrong k. Uses only Pu data."""
+    m = openmc.Material(name="Plutonium metal (α-phase)")
     m.add_nuclide("Pu239", 0.94, "wo")
     m.add_nuclide("Pu240", 0.06, "wo")
     m.set_density("g/cm3", density)
@@ -188,10 +190,18 @@ def lead(density: float = 11.35) -> openmc.Material:
     return m
 
 
-def flibe(density: float = 1.94) -> openmc.Material:
-    """FLiBe (Li2BeF4) molten salt coolant."""
-    m = openmc.Material(name="FLiBe (Li2BeF4)")
-    m.add_element("Li", 2.0)
+def flibe(density: float = 1.94, li7_enrichment: float = 99.995) -> openmc.Material:
+    """FLiBe (Li2BeF4) molten salt coolant with Li-7-enriched lithium.
+
+    Real FLiBe is enriched to ~99.99 at% Li-7 precisely because Li-6 is a strong (n,α)
+    absorber; natural lithium (7.5 % Li-6) is drastically over-absorbing and wrong for
+    any reactivity study. ``li7_enrichment`` is the Li-7 atom fraction in wt%-style
+    percent (natural ≈ 92.41); pass 92.41 to recover natural lithium."""
+    m = openmc.Material(name=f"FLiBe (Li2BeF4, {li7_enrichment:g}% Li-7)")
+    li7 = max(0.0, min(1.0, li7_enrichment / 100.0))
+    m.add_nuclide("Li7", 2.0 * li7)
+    if li7 < 1.0:
+        m.add_nuclide("Li6", 2.0 * (1.0 - li7))
     m.add_element("Be", 1.0)
     m.add_element("F", 4.0)
     m.set_density("g/cm3", density)
@@ -377,7 +387,7 @@ _MATERIALS: tuple[MaterialSpec, ...] = (
     MaterialSpec("uo2", "UO₂ fuel", ("fuel",), uo2, enrichment=True),
     MaterialSpec("u_metal", "Uranium metal", ("fuel",), u_metal, enrichment=True),
     MaterialSpec("heu_metal_godiva", "HEU metal (Godiva)", ("fuel",), heu_metal_godiva),
-    MaterialSpec("plutonium_metal", "Plutonium metal (Jezebel)", ("fuel",), plutonium_metal),
+    MaterialSpec("plutonium_metal", "Plutonium metal (α-phase)", ("fuel",), plutonium_metal),
     MaterialSpec("mox", "MOX (U,Pu)O₂", ("fuel",), mox),
     MaterialSpec("uo2_gd", "UO₂ + Gd₂O₃", ("fuel",), uo2_gd, enrichment=True),
     MaterialSpec("u3si2", "U₃Si₂", ("fuel",), u3si2, enrichment=True),
