@@ -56,6 +56,36 @@ def test_jezebel_critical(tmp_path, monkeypatch):
 
 
 @requires_data
+def test_mosteller_pincell_doppler(tmp_path, monkeypatch):
+    """Mosteller Doppler-defect benchmark (LA-UR-07-0922) at 3.9 wt%. Validates a real
+    published thermal pin cell: absolute k∞ near the cross-code reference, and a
+    physical Doppler coefficient from the HFP−HZP pair. Skips unless Boron is installed
+    (borated moderator; not in the bundle). Absolute k runs ~1 % high at low enrichment
+    because the bundled H-in-H2O kernel is 294 K-only (snapped) — the *defect* is
+    kernel-insensitive, which is what this asserts most tightly."""
+    import openmc
+
+    from nbeast.core import benchmarks, materials
+
+    if not {"B10", "B11"} <= materials.available_names(_XS):
+        pytest.skip("Mosteller needs Boron (borated moderator) — not in the bundle")
+
+    monkeypatch.chdir(tmp_path)
+
+    def keff(fuel_temp):
+        m = benchmarks.mosteller_pincell(enrichment=3.9, fuel_temp=fuel_temp,
+                                         particles=4000, batches=100, inactive=25, seed=1)
+        with openmc.StatePoint(m.run(output=False)) as sp:
+            return float(sp.keff.nominal_value)
+
+    k_hfp, k_hzp = keff(900.0), keff(600.0)
+    ref_hfp = benchmarks.MOSTELLER_KEFF[3.9]["HFP"][0]                 # 1.23048 (ENDF/B-VII.0)
+    assert abs(k_hfp - ref_hfp) < 0.012, f"Mosteller 3.9% HFP k {k_hfp:.5f} vs {ref_hfp}"
+    coef = (k_hfp - k_hzp) / (k_hfp * k_hzp) / 300.0 * 1e5             # pcm/K, ref −2.20
+    assert -4.0 < coef < -1.2, f"Mosteller Doppler coefficient {coef:.2f} pcm/K"
+
+
+@requires_data
 def test_pincell_regression(tmp_path, monkeypatch):
     """UO2/water pin cell k∞. Regression pin to NBEAST's own validated output
     (validation.md: 1.41303 ± 86 pcm) — NOT an external truth. A window of ±~1200 pcm

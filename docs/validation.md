@@ -22,6 +22,8 @@ seed, and the model NBEAST itself builds from each template. Reproduce everythin
 | **Jezebel k-eff** — ICSBEP **PU-MET-FAST-001** (bare δ-phase Pu-Ga sphere, r = 6.3849 cm) | **0.99893 ± 0.00070** | **1.0000 ± 0.0020** | ✅ (−107 pcm, ~1.4σ) |
 | Godiva spectrum | 96.3 % fast (>0.1 MeV), ~0 % thermal, mean E = 1.46 MeV | hard fast spectrum | ✅ |
 | PWR pin cell k∞ — fresh 3.2 % UO₂ | 1.41303 ± 0.00086 | ≈ 1.40 | ✅ in range |
+| **Mosteller pin cell** k∞ (3.9 %, HFP) — LA-UR-07-0922 | **1.23098 ± 0.00201** | 1.23048 ± 0.00029 (ENDF/B-VII.0) | ✅ (+50 pcm) |
+| **Mosteller Doppler coefficient** (3.9 %) | **−2.32 pcm/K** | −2.20 ± 0.09 (VII.0) | ✅ |
 | Pin cell spectrum | 19.8 % of flux thermal (<1 eV) | substantial thermal peak | ✅ |
 | **Fuel temperature (Doppler) coefficient** | **−3.59 pcm/K** | textbook −2 to −4 pcm/K | ✅ sign & magnitude |
 | Assembly k∞ vs pin cell k∞ | 1.41294 vs 1.41303 | should coincide | ✅ (~1 pcm, within σ) |
@@ -35,11 +37,26 @@ The **Godiva** result is the headline: NBEAST reproduces the ICSBEP benchmark
 eigenvalue **exactly within uncertainty** (k = 1.00000 ± 0.00044 against the published
 1.0000 ± 0.0010). Because this is a bare metal sphere with no moderator, it isolates
 the fast-physics, geometry, and material-density pipeline. Hitting 1.00000 means the
-model NBEAST constructs is faithful.
+model NBEAST constructs is faithful. A second fast anchor in a different fissile system,
+**Jezebel** (ICSBEP PU-MET-FAST-001, bare δ-phase Pu-Ga sphere), lands at
+**k = 0.99893 ± 0.00070** against 1.0000 ± 0.0020 — confirming the pipeline on plutonium,
+not just HEU (needs a Pu + Ga download; `benchmarks.jezebel()`).
 
 The **pin cell** (k∞ ≈ 1.413) and **5×5 assembly** (k∞ ≈ 1.413, matching the single pin
 to ~1 pcm) confirm the thermal-lattice path: correct UO₂/Zr/water materials, the
 H-in-H₂O thermal-scattering kernel, and reflective-lattice boundaries.
+
+The thermal path now also has an **external** anchor: the **Mosteller Doppler-defect
+benchmark** (LA-UR-07-0922 — the exact benchmark pin geometry, atom densities, and
+1400 ppm borated moderator). Across 0.711 / 2.4 / 3.9 wt%, NBEAST's Doppler
+coefficients (**−4.87 / −1.48 / −2.32 pcm/K**) agree with the ENDF/B-VII.0 reference
+(**−4.18 / −2.44 / −2.20**) within ~1σ at the (modest) test statistics, and at 3.9 %
+the absolute k∞ lands **+50 pcm** from the reference. Absolute k∞ runs up to ~900 pcm
+high at 0.711 % because the bundled H-in-H₂O kernel is 294 K-only and gets nearest-
+snapped from the benchmark's 600 K — a known bundle limitation. Crucially the *defect*
+(HFP−HZP) is kernel-insensitive: the moderator is at 600 K in both states, so the
+snapped kernel cancels and the Doppler physics validates regardless. Reproduce with
+`benchmarks.mosteller_pincell(enrichment, fuel_temp)` (needs a Boron download).
 
 ### Reactivity feedback — the Doppler coefficient
 
