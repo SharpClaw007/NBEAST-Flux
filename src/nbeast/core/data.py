@@ -104,6 +104,19 @@ def all_elements() -> list[str]:
     return sorted(_SIZES.get("elements", {}), key=z)
 
 
+def _is_synthetic(element: str) -> bool:
+    """True if the element has no naturally-occurring isotopes (Pu, Tc, Am, …) — the
+    downloader's -e element flag won't match it, so it must be fetched by nuclide."""
+    try:
+        import openmc.data
+
+        isotopes = nuclides_of(element)
+        return bool(isotopes) and not any(
+            openmc.data.NATURAL_ABUNDANCE.get(n, 0.0) > 0 for n in isotopes)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def nuclides_of(element: str) -> list[str]:
     """The nuclides of an element that have data, in mass-number order."""
     def mass(name: str) -> int:
@@ -179,6 +192,19 @@ def download(
     """Download the selection into dest, then rebuild the index. Returns the xml path."""
     dest = pathlib.Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
+
+    # The downloader's element flag (-e) only matches naturally-occurring isotopes, so a
+    # synthetic element (Pu, Tc, Am, …) fetches *nothing*. Expand those to their nuclides
+    # and fetch via -i instead, so "download Pu" actually gets the Pu isotopes.
+    elements = list(elements)
+    nuclides = list(nuclides)
+    natural_elements = []
+    for element in elements:
+        if element != "all" and _is_synthetic(element):
+            nuclides.extend(nuclides_of(element))
+        else:
+            natural_elements.append(element)
+    elements = natural_elements
 
     if elements or nuclides:
         args = ["-l", library, "-d", str(dest), "--no-overwrite"]

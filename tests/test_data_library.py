@@ -18,6 +18,14 @@ def test_size_table_and_aggregation():
     assert data.format_size(30_000_000).endswith("MB")
 
 
+def test_synthetic_elements_detected_for_download():
+    """Synthetic elements (no natural isotopes) must be flagged so download() fetches
+    them by nuclide — the -e element flag matches nothing for them."""
+    assert data._is_synthetic("Pu") and data._is_synthetic("Am") and data._is_synthetic("Tc")
+    assert not data._is_synthetic("U") and not data._is_synthetic("Fe")
+    assert data.nuclides_of("Pu")[:2] == ["Pu236", "Pu237"]   # what gets fetched via -i
+
+
 def test_standard_tier_is_a_sized_common_subset():
     """The Standard tier is the common-materials set, smaller than the full library."""
     assert {"B", "Fe", "Cr", "Ni", "C", "Al", "Gd"} <= set(data.STANDARD_ELEMENTS)
