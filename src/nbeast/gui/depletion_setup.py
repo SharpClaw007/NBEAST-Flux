@@ -35,9 +35,12 @@ _GUIDE = (
     "fast systems). Download one and select it below.<br><br>"
     "<b>2. A depletion-capable cross-section library</b> — one with cross sections for "
     "the fission products and actinides the chain produces (e.g. the full ENDF/B-VIII.0 "
-    "library). Activate it from <i>File ▸ Cross-section data…</i>.<br><br>"
+    "library). Activate it from <i>File ▸ Data library…</i>.<br><br>"
     "Once a chain is selected and an adequate library is active, "
-    "<i>Analysis ▸ Depletion / burnup…</i> runs a real burnup calculation."
+    "<i>Analysis ▸ Depletion / burnup…</i> runs a real burnup calculation.<br><br>"
+    "⚠ <b>The workflow is validated; the burnup numbers are not benchmarked.</b> NBEAST "
+    "has not validated k-vs-burnup or inventories against a depletion benchmark — treat "
+    "results as exploratory."
 )
 
 

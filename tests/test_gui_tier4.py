@@ -132,6 +132,9 @@ def test_depletion_dialog_gating(qapp, tmp_path):
     assert dd.run_btn.isEnabled()
     assert dd.integrator_combo.count() == 2
     assert len(dd._config().timesteps_days) == dd.steps_spin.value()
+    # honest labeling: burnup numbers are not benchmarked (workflow-only validation)
+    labels = " ".join(w.text() for w in dd.findChildren(type(dd.status)))
+    assert "not benchmarked" in labels
     dd.close()
 
     win.set_template("Shield slab")

@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pyqtgraph as pg
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -74,6 +74,20 @@ class DepletionDialog(QDialog):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
+
+        banner = QLabel(
+            "⚠ <b>Workflow validated; burnup numbers are not benchmarked.</b> The depletion "
+            "pipeline is verified end-to-end, but NBEAST has not validated its k-vs-burnup "
+            "or inventory <i>values</i> against a depletion benchmark (e.g. VERA). Treat "
+            "results as exploratory, and check against a validated depletion code before use."
+        )
+        banner.setWordWrap(True)
+        banner.setTextFormat(Qt.RichText)
+        banner.setStyleSheet(
+            "background:#5a4a00; color:#ffe9a8; border:1px solid #8a7300;"
+            "border-radius:4px; padding:6px;")
+        layout.addWidget(banner)
+
         form = QFormLayout()
 
         self.steps_spin = QSpinBox()
