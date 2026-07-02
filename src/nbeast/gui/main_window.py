@@ -20,14 +20,11 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QCompleter,
-    QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
     QHeaderView,
     QInputDialog,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QSpinBox,
@@ -35,14 +32,12 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QToolBar,
-    QTreeWidget,
     QTreeWidgetItem,
 )
 
 from nbeast.core import cad, materials, specs, tallies
 from nbeast.core.project import Project
 
-from .history import HistoryPanel
 from .monitor import ConvergenceMonitor
 from .run_controller import RunController
 from .spectrum import SpectrumView
@@ -129,8 +124,7 @@ class MainWindow(QMainWindow):
 
         self._build_menu()
         self._build_toolbar()
-        self._build_docks()
-        self._build_central()
+        self._build_shell()
         self._restore_from_project()
         self._sanitize_material_values()
         self.statusBar().showMessage("Ready")
@@ -144,8 +138,13 @@ class MainWindow(QMainWindow):
         new_project_action.triggered.connect(self._new_project)
         file_menu.addAction(new_project_action)
         open_project_action = QAction("Open project…", self)
+        open_project_action.setShortcut("Ctrl+O")
         open_project_action.triggered.connect(self._open_project)
         file_menu.addAction(open_project_action)
+        save_action = QAction("Save project state", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self._persist_state)
+        file_menu.addAction(save_action)
         file_menu.addSeparator()
 
         export_action = QAction("Export report…", self)
@@ -176,6 +175,19 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(undo_action)
         edit_menu.addAction(redo_action)
         self.doc.undo_stack.indexChanged.connect(self._on_undo_redo)
+
+        view_menu = self.menuBar().addMenu("&View")
+        for i, label in enumerate(("Convergence", "Flux map", "Spectrum"), start=1):
+            action = QAction(label, self)
+            action.setShortcut(f"Ctrl+{i}")
+            action.triggered.connect(lambda _c=False, idx=i - 1: self.tabs.setCurrentIndex(idx))
+            view_menu.addAction(action)
+        view_menu.addSeparator()
+        messages_action = QAction("Messages", self)
+        messages_action.setShortcut("Ctrl+L")
+        messages_action.triggered.connect(
+            lambda: self.messages.toggle.setChecked(not self.messages.toggle.isChecked()))
+        view_menu.addAction(messages_action)
 
         examples_menu = self.menuBar().addMenu("&Examples")
         for label, key in (
@@ -228,6 +240,7 @@ class MainWindow(QMainWindow):
     # ---- construction -----------------------------------------------------
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
+        tb.setObjectName("main_toolbar")   # required for saveState()
         tb.setMovable(False)
         self.addToolBar(tb)
 
@@ -239,13 +252,15 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.template_combo)
 
         tb.addSeparator()
-        self.run_action = QAction("Run", self)
-        self.run_action.setToolTip("Run the simulation.")
+        self.run_action = QAction("▶ Run", self)
+        self.run_action.setShortcut("Ctrl+R")             # ⌘R on macOS
+        self.run_action.setToolTip("Run the simulation (⌘R).")
         self.run_action.triggered.connect(self.start_run)
         tb.addAction(self.run_action)
-        self.stop_action = QAction("Stop", self)
+        self.stop_action = QAction("■ Stop", self)
         self.stop_action.setEnabled(False)
-        self.stop_action.setToolTip("Stop the running simulation (keeps results so far).")
+        self.stop_action.setShortcut("Ctrl+.")            # ⌘. — the macOS cancel idiom
+        self.stop_action.setToolTip("Stop the running simulation, keeping results so far (⌘.).")
         self.stop_action.triggered.connect(self.stop_run)
         tb.addAction(self.stop_action)
 
@@ -294,69 +309,62 @@ class MainWindow(QMainWindow):
         self.batches_spin.setValue(batches)
         self.particles_spin.setValue(particles)
 
-    def _build_docks(self) -> None:
-        self.model_tree = QTreeWidget()
-        self.model_tree.setHeaderLabel("Model")
+    # The Studies section of the Model Builder (key, label, tooltip).
+    _STUDY_ENTRIES = (
+        ("sweep", "Parameter sweep / criticality search",
+         "Sweep a parameter or search for the value that makes k = target."),
+        ("moderation", "Moderation / reactivity curve",
+         "k, reactivity, and source multiplication vs moderator density."),
+        ("poisoning", "Reactor poisoning (Xe-135 / Sm-149)",
+         "Equilibrium fission-product worths, spectrum-consistent."),
+        ("mgxs", "Multigroup constants",
+         "Collapse the run into a complete few-group diffusion set."),
+        ("depletion", "Depletion / burnup",
+         "k vs burnup as the fuel depletes (needs a chain download)."),
+    )
+
+    def _build_shell(self) -> None:
+        """The COMSOL-style three-pane shell: Model Builder tree | settings pane |
+        viewport tabs over a messages strip. Replaces the five-dock layout."""
+        from PySide6.QtWidgets import QSplitter, QVBoxLayout, QWidget
+
+        from .messages import MessagesStrip
+        from .model_builder import ModelBuilderTree
+
+        # -- left: the tree ------------------------------------------------------
+        self.model_tree = ModelBuilderTree()
         self.model_tree.setToolTip(
-            "The model being simulated. Click a group (Materials / Geometry) to edit "
-            "its parameters in the Properties panel below."
+            "The Model Builder. Model: click a group to edit it. Studies: click an "
+            "analysis to open it. Results: click a field to view it; saved runs live "
+            "under Results ▸ Saved runs."
         )
         self.model_tree.itemClicked.connect(self._on_tree_click)
-        model_dock = QDockWidget("Model", self)
-        model_dock.setWidget(self.model_tree)
-        self.addDockWidget(Qt.LeftDockWidgetArea, model_dock)
+        self.model_tree.itemDoubleClicked.connect(self._on_tree_double_click)
+        self.model_tree.historyLoadRequested.connect(self._load_history_run)
+        self.model_tree.historyCompareRequested.connect(self._compare_history_runs)
+        self.model_tree.historyDeleteRequested.connect(self._delete_history_runs)
+        self.model_tree.set_studies(list(self._STUDY_ENTRIES))
 
+        # -- middle: settings pane (header + the property editors) ----------------
+        self.settings_header = QLabel("Settings")
+        header_font = self.settings_header.font()
+        header_font.setBold(True)
+        self.settings_header.setFont(header_font)
+        self.settings_hint = QLabel("Select a node in the Model Builder to edit it.")
+        self.settings_hint.setWordWrap(True)
         self.properties = QTableWidget(0, 2)
         self.properties.setHorizontalHeaderLabels(["Property", "Value"])
         self.properties.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.properties.verticalHeader().setVisible(False)
-        props_dock = QDockWidget("Properties (select a group to edit)", self)
-        props_dock.setWidget(self.properties)
-        self.addDockWidget(Qt.LeftDockWidgetArea, props_dock)
+        settings_pane = QWidget()
+        pane_layout = QVBoxLayout(settings_pane)
+        pane_layout.setContentsMargins(8, 8, 8, 8)
+        pane_layout.setSpacing(6)
+        pane_layout.addWidget(self.settings_header)
+        pane_layout.addWidget(self.settings_hint)
+        pane_layout.addWidget(self.properties, 1)
 
-        # Right dock: results field picker (enabled once a run finishes). Built
-        # dynamically so it offers a 2D-slice + a 3D entry per field where 3D applies.
-        self.results_list = QListWidget()
-        self._rebuild_results_list()
-        self.results_list.setEnabled(False)
-        self.results_list.setToolTip(
-            "Pick a result to view. Each field offers a 2D slice and, where meaningful, "
-            "a 3D view (available after a run)."
-        )
-        self.results_list.itemClicked.connect(self._on_results_clicked)
-        results_dock = QDockWidget("Results", self)
-        results_dock.setWidget(self.results_list)
-        self.addDockWidget(Qt.RightDockWidgetArea, results_dock)
-
-        # Run history: persisted runs, reloadable + comparable.
-        self.history_panel = HistoryPanel()
-        self.history_panel.loadRequested.connect(self._load_history_run)
-        self.history_panel.compareRequested.connect(self._compare_history_runs)
-        self.history_panel.deleteRequested.connect(self._delete_history_runs)
-        history_dock = QDockWidget("Run history", self)
-        history_dock.setWidget(self.history_panel)
-        self.addDockWidget(Qt.RightDockWidgetArea, history_dock)
-
-        # Analysis tools: a tab beside Results + Run history (was the Analysis menu).
-        from .analysis_panel import AnalysisPanel
-
-        self.analysis_panel = AnalysisPanel({
-            "sweep": self._open_sweep,
-            "moderation": self._open_moderation,
-            "poisoning": self._open_poisoning,
-            "mgxs": self._open_mgxs,
-            "depletion": self._open_depletion,
-        })
-        analysis_dock = QDockWidget("Analysis", self)
-        analysis_dock.setWidget(self.analysis_panel)
-        self.addDockWidget(Qt.RightDockWidgetArea, analysis_dock)
-
-        self.tabifyDockWidget(results_dock, history_dock)
-        self.tabifyDockWidget(history_dock, analysis_dock)
-        results_dock.raise_()
-        self._update_analysis_availability()
-
-    def _build_central(self) -> None:
+        # -- right: viewport tabs over the messages strip --------------------------
         self.tabs = QTabWidget()
         self.monitor = ConvergenceMonitor()
         self.flux_view = FluxViewport()
@@ -364,7 +372,25 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.monitor, "Convergence")
         self.tabs.addTab(self.flux_view, "Flux map")
         self.tabs.addTab(self.spectrum_view, "Spectrum")
-        self.setCentralWidget(self.tabs)
+        self.messages = MessagesStrip()
+        right = QSplitter(Qt.Vertical)
+        right.addWidget(self.tabs)
+        right.addWidget(self.messages)
+        right.setStretchFactor(0, 1)
+        right.setCollapsible(0, False)
+
+        self._splitter = QSplitter(Qt.Horizontal)
+        self._splitter.addWidget(self.model_tree)
+        self._splitter.addWidget(settings_pane)
+        self._splitter.addWidget(right)
+        self._splitter.setStretchFactor(2, 1)
+        self._splitter.setSizes([250, 300, 890])
+        self.setCentralWidget(self._splitter)
+
+        self._current_score: str | None = None
+        self._rebuild_results_list()
+        self.model_tree.set_results_enabled(False)
+        self._update_analysis_availability()
 
     # ---- document delegation ------------------------------------------------
     # State lives on self.doc; these properties keep the historical attribute names
@@ -395,8 +421,11 @@ class MainWindow(QMainWindow):
         """After undo/redo, re-render the open editor so its widgets show the
         restored values (the tree refreshes via the doc signals)."""
         item = self.model_tree.currentItem()
-        if item is not None:
-            self._on_tree_click(item, 0)
+        if item is None:
+            return
+        kind = self.model_tree.node_kind(item)
+        if kind and kind[0] == "group":   # only editors re-render; never re-open tools
+            self._show_group_editors(str(kind[1]))
 
     # ---- model tree -------------------------------------------------------
     @property
@@ -460,14 +489,12 @@ class MainWindow(QMainWindow):
         self._unit_system = "US" if index == 1 else "SI"
         self._refresh_tree()
         item = self.model_tree.currentItem()
-        if item is not None:           # re-render an open Properties editor in the new unit
-            self._on_tree_click(item, 0)
+        kind = self.model_tree.node_kind(item) if item is not None else None
+        if kind and kind[0] == "group":   # re-render an open editor in the new unit
+            self._show_group_editors(str(kind[1]))
         # re-render the field on screen so its colorbar unit updates
-        if self.tabs.currentWidget() is self.flux_view and self._statepoint \
-                and self.results_list.isEnabled():
-            current = self.results_list.currentItem()
-            if current is not None:
-                self._on_results_clicked(current)
+        if self.tabs.currentWidget() is self.flux_view:
+            self._rerender_current_result()
 
     def _field_bar_title(self, score: str) -> str:
         from nbeast.core import units
@@ -480,11 +507,8 @@ class MainWindow(QMainWindow):
         else:
             self._power_w = float(value)
         self._refresh_tree()
-        if self.tabs.currentWidget() is self.flux_view and self._statepoint \
-                and self.results_list.isEnabled():
-            current = self.results_list.currentItem()
-            if current is not None:
-                self._on_results_clicked(current)
+        if self.tabs.currentWidget() is self.flux_view:
+            self._rerender_current_result()
         self._surface_diagnostics()   # refresh fission-power readout
 
     def _display_scale(self, results, score: str, tally_name: str) -> float:
@@ -536,9 +560,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_tree(self) -> None:
         self._update_analysis_availability()
-        self.model_tree.clear()
         if self._is_cad:
-            self._refresh_cad_tree()
+            self.model_tree.set_model_groups(self._cad_tree_groups())
             return
         spec = self.spec
 
@@ -556,11 +579,10 @@ class MainWindow(QMainWindow):
         for p in spec.params_in("Geometry"):
             geometry.addChild(QTreeWidgetItem([self._value_text(p)]))
 
-        for item in (materials_item, geometry, self._settings_tree_item()):
-            self.model_tree.addTopLevelItem(item)
-            item.setExpanded(True)
+        self.model_tree.set_model_groups(
+            [materials_item, geometry, self._settings_tree_item()])
 
-    def _refresh_cad_tree(self) -> None:
+    def _cad_tree_groups(self) -> list[QTreeWidgetItem]:
         from nbeast.core import cad
 
         step = self._cad.get("step")
@@ -576,17 +598,41 @@ class MainWindow(QMainWindow):
                 materials_item.addChild(QTreeWidgetItem([f"Solid {i}: {label}"]))
         else:
             materials_item.addChild(QTreeWidgetItem(["(import a CAD file to assign materials)"]))
+        return [materials_item, geometry, self._settings_tree_item()]
 
-        for item in (materials_item, geometry, self._settings_tree_item()):
-            self.model_tree.addTopLevelItem(item)
-            item.setExpanded(True)
+    # ---- tree routing (Model groups / Studies / Results / history) ------------
+    def _on_tree_click(self, item: QTreeWidgetItem, _column: int = 0) -> None:
+        kind = self.model_tree.node_kind(item)
+        if kind is None:
+            return
+        what, payload = kind
+        if what == "group":
+            self._show_group_editors(str(payload))
+        elif what == "study":
+            self._open_study(str(payload))
+        elif what == "result":
+            self._on_result_selected(str(payload))
+        # history nodes act on double-click / context menu (selection stays cheap)
 
-    # ---- properties (editing) --------------------------------------------
-    def _group_of(self, item: QTreeWidgetItem) -> str:
-        return item.text(0) if item.parent() is None else item.parent().text(0)
+    def _on_tree_double_click(self, item: QTreeWidgetItem, _column: int = 0) -> None:
+        kind = self.model_tree.node_kind(item)
+        if kind and kind[0] == "history":
+            self._load_history_run(str(kind[1]))
 
-    def _on_tree_click(self, item: QTreeWidgetItem, _column: int) -> None:
-        group = self._group_of(item)
+    def _open_study(self, key: str) -> None:
+        opener = {
+            "sweep": self._open_sweep,
+            "moderation": self._open_moderation,
+            "poisoning": self._open_poisoning,
+            "mgxs": self._open_mgxs,
+            "depletion": self._open_depletion,
+        }.get(key)
+        if opener is not None:
+            opener()
+
+    def _show_group_editors(self, group: str) -> None:
+        self.settings_header.setText(f"Model ▸ {group}")
+        self.settings_hint.hide()
         if group == "Settings":
             self._render_settings_editors()
             return
@@ -844,12 +890,20 @@ class MainWindow(QMainWindow):
         self.monitor.reset()
         self.monitor.mark_inactive(0 if self._is_fixed_source else _inactive_for(self.batches_spin.value()))
         self.spectrum_view.clear()
-        self.results_list.setEnabled(False)
+        self.model_tree.set_results_enabled(False)
         self.run_action.setEnabled(False)
         self.stop_action.setEnabled(True)
+        self._log(f"Run started — {self._template}, {self.batches_spin.value()} batches × "
+                  f"{self.particles_spin.value()} particles (seed {self.seed_spin.value()})")
         self.statusBar().showMessage("Running…")
         self._current_run_dir = self._run_root / "current"
         self.controller.start(model, self._current_run_dir)
+
+    def _log(self, text: str, level: str = "info") -> None:
+        """Mirror a message to the messages strip (persistent) + status bar (transient)."""
+        if hasattr(self, "messages"):
+            self.messages.log(text, level)
+        self.statusBar().showMessage(text)
 
     def stop_run(self) -> None:
         self.controller.cancel()
@@ -857,32 +911,31 @@ class MainWindow(QMainWindow):
 
     def _on_started(self, n_batches: int) -> None:
         self._total_batches = n_batches
+        self.messages.start_progress(n_batches, "batch 0")
         self.statusBar().showMessage(f"Running… 0/{n_batches} batches")
 
     def _on_batch(self, update) -> None:
         self.monitor.add_point(
             update.batch, update.keff, update.keff_std, getattr(update, "entropy", None)
         )
-        if update.keff is None:  # fixed-source run — no k-effective to report
-            self.statusBar().showMessage(
-                f"Running… batch {update.batch}/{self._total_batches}"
-            )
-        else:
-            self.statusBar().showMessage(
-                f"Running… batch {update.batch}/{self._total_batches}  k = {update.keff:.5f}"
-            )
+        k_note = "" if update.keff is None else f"  k = {update.keff:.5f}"
+        self.messages.set_progress(update.batch, f"batch {update.batch}/{self._total_batches}")
+        self.statusBar().showMessage(
+            f"Running… batch {update.batch}/{self._total_batches}{k_note}"
+        )
 
     def _on_finished(self, result) -> None:
         self.last_result = result
         self.run_action.setEnabled(True)
         self.stop_action.setEnabled(False)
+        self.messages.clear_progress()
         k_txt = f"{result.keff:.5f}" if result.keff is not None else "n/a"
         if result.cancelled:
-            self.statusBar().showMessage(f"Stopped at batch {len(result.batches)} (k ≈ {k_txt})")
+            self._log(f"Stopped at batch {len(result.batches)} (k ≈ {k_txt})", "warning")
         elif result.keff is not None:
-            self.statusBar().showMessage(f"Done — k = {k_txt} ± {result.keff_std:.5f}")
+            self._log(f"Done — k = {k_txt} ± {result.keff_std:.5f}")
         else:
-            self.statusBar().showMessage(f"Done — fixed-source run ({len(result.batches)} batches)")
+            self._log(f"Done — fixed-source run ({len(result.batches)} batches)")
         # Surface how the requested temperature was treated (nearest-snapping + the
         # 294 K-pinned thermal kernel) so the approximation isn't silent.
         temperature = self._param_values.get(self._template, {}).get("temperature")
@@ -929,14 +982,15 @@ class MainWindow(QMainWindow):
             )
         else:
             self.monitor.clear_note()
-        self._rebuild_results_list()
-        self.results_list.setEnabled(True)
+        self._rebuild_results_list(enabled=True)
         # Default view: 2D flux slice for templates, 3D flux volume for CAD (its headline).
         if self._cad_result:
             self._select_result("flux" + _3D_SUFFIX)
+            self._current_score = "flux" + _3D_SUFFIX
             self._show_cad_field("flux", switch_tab=False)
         else:
             self._select_result("flux")
+            self._current_score = "flux"
             self._show_field("flux", switch_tab=False)
 
     def _surface_diagnostics(self) -> None:
@@ -951,6 +1005,9 @@ class MainWindow(QMainWindow):
             base = f"Done — k = {diag.keff:.5f} ± {diag.keff_std:.5f} ({diag.keff_pcm:.0f} pcm)"
             ok_text = "✓ converged"
         tail = f"⚠ {diag.warnings[0]}" if diag.warnings else ok_text
+        for caution in diag.warnings:      # persistent record of every caution
+            if hasattr(self, "messages"):
+                self.messages.log(caution, "warning")
         self.statusBar().showMessage(f"{base}  {tail}{self._fission_power_note()}")
 
     def _fission_power_note(self) -> str:
@@ -1005,34 +1062,32 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"Field '{score}' unavailable: {exc}")
 
-    # ---- results list -----------------------------------------------------
-    def _add_result_item(self, label: str, score: str) -> None:
-        item = QListWidgetItem(label)
-        item.setData(Qt.UserRole, score)
-        self.results_list.addItem(item)
-
-    def _rebuild_results_list(self) -> None:
-        """Offer a 2D-slice + a 3D entry per field, per the current results' geometry:
-        z-uniform templates and CAD get 3D for every field; a true-3D template (Godiva)
-        gets 3D only for the scalar flux (its real 3D tally)."""
-        self.results_list.clear()
+    # ---- results section ----------------------------------------------------
+    def _result_entries(self) -> list[tuple[str, str]]:
+        """(label, score) pairs: a 2D-slice + a 3D entry per field, per the current
+        results' geometry: z-uniform templates and CAD get 3D for every field; a
+        true-3D template (Godiva) gets 3D only for the scalar flux (its real 3D tally)."""
         is_cad = self._cad_result
         z_inv = (not is_cad) and self.spec is not None and self.spec.z_invariant
+        entries: list[tuple[str, str]] = []
         for label, score in _FIELD_ENTRIES:
-            self._add_result_item(label, score)                 # 2D slice
-            if is_cad or z_inv or score == "flux":              # 3D where meaningful
-                self._add_result_item(f"{label} (3D)", score + _3D_SUFFIX)
+            entries.append((label, score))                       # 2D slice
+            if is_cad or z_inv or score == "flux":               # 3D where meaningful
+                entries.append((f"{label} (3D)", score + _3D_SUFFIX))
         if not is_cad:
-            self._add_result_item("Neutron tracks", "tracks")
+            entries.append(("Neutron tracks", "tracks"))
+        return entries
+
+    def _rebuild_results_list(self, enabled: bool | None = None) -> None:
+        if enabled is None:
+            enabled = bool(self._statepoint)
+        self.model_tree.set_result_entries(self._result_entries(), enabled)
 
     def _select_result(self, score: str) -> None:
-        for i in range(self.results_list.count()):
-            if self.results_list.item(i).data(Qt.UserRole) == score:
-                self.results_list.setCurrentRow(i)
-                return
+        self.model_tree.select_result(score)
 
-    def _on_results_clicked(self, item) -> None:
-        score = item.data(Qt.UserRole)
+    def _on_result_selected(self, score: str) -> None:
+        self._current_score = score
         if score == "tracks":
             self.show_tracks()
             return
@@ -1046,6 +1101,11 @@ class MainWindow(QMainWindow):
             self._show_extruded_field(base, switch_tab=True)  # extruded 3D block
         else:
             self._show_volume()                              # real 3D flux (Godiva)
+
+    def _rerender_current_result(self) -> None:
+        """Re-render the field on screen (units / normalization changed)."""
+        if self._statepoint and self._current_score and self._current_score != "tracks":
+            self._on_result_selected(self._current_score)
 
     def _show_extruded_field(self, score: str, switch_tab: bool = True) -> None:
         """Render a z-invariant template field as a 3-D block by extruding its 2D slice
@@ -1154,7 +1214,8 @@ class MainWindow(QMainWindow):
         self.last_result = None
         self.run_action.setEnabled(True)
         self.stop_action.setEnabled(False)
-        self.statusBar().showMessage(f"Error: {message}")
+        self.messages.clear_progress()
+        self._log(f"Error: {message}", "error")
 
     # ---- project + run history -------------------------------------------
     def _current_settings(self) -> dict:
@@ -1200,7 +1261,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"NBEAST — {self.project.name}")
 
     def _refresh_history(self) -> None:
-        self.history_panel.set_runs(self.project.runs)
+        self.model_tree.set_history(self.project.runs)
 
     def _archive_run(self, result) -> None:
         """Save a finished run into the project so it persists and can be revisited."""
@@ -1335,8 +1396,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Raw export failed: {exc}")
 
     def _update_analysis_availability(self) -> None:
-        """Grey out analysis tools that don't apply to the current template."""
-        if not hasattr(self, "analysis_panel"):
+        """Grey out Studies entries that don't apply to the current template."""
+        if not hasattr(self, "model_tree"):
             return
         spec = self.spec
         eigen = spec is not None and not self._is_fixed_source
@@ -1344,9 +1405,9 @@ class MainWindow(QMainWindow):
         eig_reason = "Needs an eigenvalue template (not Custom CAD or the fixed-source shield)."
         mod_reason = "Needs a moderated thermal lattice (pin cell or assembly)."
         for key in ("sweep", "mgxs", "depletion"):
-            self.analysis_panel.set_enabled(key, eigen, eig_reason)
+            self.model_tree.set_study_enabled(key, eigen, eig_reason)
         for key in ("moderation", "poisoning"):
-            self.analysis_panel.set_enabled(key, moderated, mod_reason)
+            self.model_tree.set_study_enabled(key, moderated, mod_reason)
 
     def _analysis_needs_template(self) -> bool:
         """The Analysis tools (sweep, multigroup, depletion) are eigenvalue-only —

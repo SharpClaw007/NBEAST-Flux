@@ -37,12 +37,12 @@ def test_mainwindow_constructs(qapp):
 
     win = MainWindow()
     assert win.windowTitle()
-    assert win.model_tree.topLevelItemCount() == 3  # Materials, Geometry, Settings
+    assert win.model_tree.model_group_names() == ["Materials", "Geometry", "Settings"]
     assert win.tabs.count() == 3  # Convergence + Flux map + Spectrum
 
     win.set_template("Godiva")
     # Godiva has a single material plus the editable temperature -> two children.
-    materials_node = win.model_tree.topLevelItem(0)
+    materials_node = win.model_tree.model_group("Materials")
     assert materials_node.text(0) == "Materials"
     assert materials_node.childCount() == 2
     win.close()
@@ -59,11 +59,7 @@ def test_settings_editable_in_model_tree(qapp, tmp_path):
     assert win.particles_spin.value() == 5000
 
     # clicking Settings renders editable editors; edits write to the canonical spins
-    settings = next(
-        win.model_tree.topLevelItem(i)
-        for i in range(win.model_tree.topLevelItemCount())
-        if win.model_tree.topLevelItem(i).text(0) == "Settings"
-    )
+    settings = win.model_tree.model_group("Settings")
     win._on_tree_click(settings, 0)
     assert win.properties.rowCount() == 5  # quality, batches, particles, seed, power
     win._batches_editor.setValue(321)

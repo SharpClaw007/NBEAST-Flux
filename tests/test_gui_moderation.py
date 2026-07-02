@@ -83,17 +83,20 @@ def test_poisoning_dialog_gates_on_data_and_template(qapp, tmp_path):
     win.close()
 
 
-def test_analysis_panel_replaces_menu_and_gates_per_template(qapp, tmp_path):
+def test_studies_tree_gates_per_template(qapp, tmp_path):
+    """The analyses live under Studies in the Model Builder, greyed per template."""
     from nbeast.gui.main_window import CAD_TEMPLATE
 
     win = _win(tmp_path)
-    # the Analysis menu is gone — the tools live in the Analysis panel
+    # the Analysis menu is gone — the tools live in the Studies section of the tree
     assert not any("Analysis" in a.text() for a in win.menuBar().actions())
-    panel = win.analysis_panel
-    assert set(panel._buttons) == {"sweep", "moderation", "poisoning", "mgxs", "depletion"}
+    studies = win.model_tree.studies_root
+    items = {win.model_tree.node_kind(studies.child(i))[1]: studies.child(i)
+             for i in range(studies.childCount())}
+    assert set(items) == {"sweep", "moderation", "poisoning", "mgxs", "depletion"}
 
     def enabled():
-        return {k: panel._buttons[k].isEnabled() for k in panel._buttons}
+        return {k: not item.isDisabled() for k, item in items.items()}
 
     win.set_template("Pin cell")
     assert all(enabled().values())                    # everything applies to a thermal pin
@@ -111,9 +114,7 @@ def test_fixed_source_uses_source_strength(qapp, tmp_path):
     win = _win(tmp_path)
 
     def norm_row():
-        s = next(win.model_tree.topLevelItem(i)
-                 for i in range(win.model_tree.topLevelItemCount())
-                 if win.model_tree.topLevelItem(i).text(0) == "Settings")
+        s = win.model_tree.model_group("Settings")
         win._on_tree_click(s, 0)
         return win.properties.item(4, 0).text(), win.properties.cellWidget(4, 1)
 

@@ -32,11 +32,7 @@ def test_geometry_click_shows_editors(qapp):
 
     win = MainWindow()
     win.set_template("Pin cell")
-    geom = next(
-        win.model_tree.topLevelItem(i)
-        for i in range(win.model_tree.topLevelItemCount())
-        if win.model_tree.topLevelItem(i).text(0) == "Geometry"
-    )
+    geom = win.model_tree.model_group("Geometry")
     win._on_tree_click(geom, 0)
 
     # pitch + 3 radii = 4 editable geometry parameters
@@ -53,11 +49,7 @@ def test_assembly_nside_editor_is_int(qapp):
 
     win = MainWindow()
     win.set_template("Fuel assembly")
-    geom = next(
-        win.model_tree.topLevelItem(i)
-        for i in range(win.model_tree.topLevelItemCount())
-        if win.model_tree.topLevelItem(i).text(0) == "Geometry"
-    )
+    geom = win.model_tree.model_group("Geometry")
     win._on_tree_click(geom, 0)
     editors = [win.properties.cellWidget(r, 1) for r in range(win.properties.rowCount())]
     assert any(isinstance(e, QSpinBox) for e in editors), "n_side should be an int spin box"

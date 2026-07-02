@@ -66,7 +66,7 @@ def test_select_material_updates_state_tree_and_build(qapp, tmp_path):
     win.set_template("Pin cell")
     win._on_material_selected("fuel", "u_metal")
     assert win._material_values["Pin cell"]["fuel"] == "u_metal"
-    tree = win.model_tree.topLevelItem(0)
+    tree = win.model_tree.model_group("Materials")
     assert "Uranium metal" in tree.child(0).text(0)
     model = win._build_model()
     assert any("U metal" in m.name for m in model.materials)

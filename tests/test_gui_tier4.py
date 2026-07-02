@@ -68,8 +68,7 @@ def test_fixed_source_settings_show_zero_inactive(qapp, tmp_path):
     def inactive_row(template):
         win.set_template(template)
         tree = win.model_tree
-        settings = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
-                        if tree.topLevelItem(i).text(0) == "Settings")
+        settings = tree.model_group("Settings")
         return next(settings.child(i).text(0) for i in range(settings.childCount())
                     if settings.child(i).text(0).startswith("inactive"))
 
@@ -79,11 +78,8 @@ def test_fixed_source_settings_show_zero_inactive(qapp, tmp_path):
 
 
 def test_results_picker_has_richer_fields(qapp, tmp_path):
-    from PySide6.QtCore import Qt
-
     win = _win(tmp_path)
-    scores = {win.results_list.item(i).data(Qt.UserRole)
-              for i in range(win.results_list.count())}
+    scores = set(win.model_tree.result_scores())
     assert {"absorption", "nu-fission", "heating", "dose"} <= scores
     win.close()
 

@@ -66,9 +66,7 @@ def test_every_template_builds(qapp, tmp_path):
 
 def test_settings_editors_extremes(qapp, tmp_path):
     win = _win(tmp_path)
-    settings = next(win.model_tree.topLevelItem(i)
-                    for i in range(win.model_tree.topLevelItemCount())
-                    if win.model_tree.topLevelItem(i).text(0) == "Settings")
+    settings = win.model_tree.model_group("Settings")
     win._on_tree_click(settings, 0)
     assert win.properties.rowCount() == 5  # quality, batches, particles, seed, power
     # push editors past their bounds — spin boxes must clamp, not crash
@@ -86,9 +84,7 @@ def test_param_editors_clamp_nonsensical_input(qapp, tmp_path):
 
     win = _win(tmp_path)
     win.set_template("Pin cell")
-    geom = next(win.model_tree.topLevelItem(i)
-                for i in range(win.model_tree.topLevelItemCount())
-                if win.model_tree.topLevelItem(i).text(0) == "Geometry")
+    geom = win.model_tree.model_group("Geometry")
     win._on_tree_click(geom, 0)
     editor = next(win.properties.cellWidget(r, 1) for r in range(win.properties.rowCount())
                   if isinstance(win.properties.cellWidget(r, 1), QDoubleSpinBox))
@@ -125,9 +121,7 @@ def test_cad_template_guards(qapp, tmp_path):
     win = _win(tmp_path)
     win.set_template(CAD_TEMPLATE)
     assert win._is_cad and win.spec is None
-    groups = [win.model_tree.topLevelItem(i).text(0)
-              for i in range(win.model_tree.topLevelItemCount())]
-    assert groups == ["Materials", "Geometry", "Settings"]
+    assert win.model_tree.model_group_names() == ["Materials", "Geometry", "Settings"]
     # parametric-only features must no-op gracefully for CAD (no crash, no dialog)
     win._open_sweep()
     win._open_mgxs()
@@ -136,9 +130,7 @@ def test_cad_template_guards(qapp, tmp_path):
     win.start_run()          # routes to the (stubbed) CAD dialog
     win.export_report(tmp_path / "rep")   # guarded — just a message
     # settings still editable under CAD
-    settings = next(win.model_tree.topLevelItem(i)
-                    for i in range(win.model_tree.topLevelItemCount())
-                    if win.model_tree.topLevelItem(i).text(0) == "Settings")
+    settings = win.model_tree.model_group("Settings")
     win._on_tree_click(settings, 0)
     assert win.properties.rowCount() == 5  # quality, batches, particles, seed, power
     win.close()
@@ -204,8 +196,7 @@ def test_units_toggle_converts_geometry(qapp, tmp_path):
 
     def pitch_row():
         tree = win.model_tree
-        geo = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
-                   if tree.topLevelItem(i).text(0) == "Geometry")
+        geo = tree.model_group("Geometry")
         return next(geo.child(i).text(0) for i in range(geo.childCount())
                     if "pitch" in geo.child(i).text(0).lower())
 
@@ -214,8 +205,7 @@ def test_units_toggle_converts_geometry(qapp, tmp_path):
     assert pitch_row().endswith("in")
     assert f"{cm / 2.54:.4f}" in pitch_row()
     # edit in inches -> stored back in cm
-    geo = next(win.model_tree.topLevelItem(i) for i in range(win.model_tree.topLevelItemCount())
-               if win.model_tree.topLevelItem(i).text(0) == "Geometry")
+    geo = win.model_tree.model_group("Geometry")
     win._on_tree_click(geo, 0)
     row = next(r for r in range(win.properties.rowCount())
                if "pitch" in win.properties.item(r, 0).text().lower())
@@ -237,13 +227,10 @@ def test_field_bar_title_relative_by_default(qapp, tmp_path):
 def test_results_list_has_2d_and_3d_entries(qapp, tmp_path):
     """Each field gets a 2D-slice entry and, where 3D is meaningful, a separate 3D entry.
     z-uniform templates get 3D for every field; Godiva (true 3D sphere) only for flux."""
-    from PySide6.QtCore import Qt
-
     win = _win(tmp_path)
 
     def scores():
-        return [win.results_list.item(i).data(Qt.UserRole)
-                for i in range(win.results_list.count())]
+        return win.model_tree.result_scores()
 
     win.set_template("Pin cell")
     win._rebuild_results_list()
@@ -261,9 +248,6 @@ def test_results_list_has_2d_and_3d_entries(qapp, tmp_path):
 
 
 def test_result_3d_click_routes_by_geometry(qapp, tmp_path):
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QListWidgetItem
-
     win = _win(tmp_path)
     win._statepoint = "sp.h5"
     calls = {"2d": [], "extruded": [], "cad": [], "volume": []}
@@ -272,14 +256,9 @@ def test_result_3d_click_routes_by_geometry(qapp, tmp_path):
     win._show_cad_field = lambda s, switch_tab=True: calls["cad"].append(s)
     win._show_volume = lambda: calls["volume"].append("flux")
 
-    def click(score):
-        item = QListWidgetItem("x")
-        item.setData(Qt.UserRole, score)
-        win._on_results_clicked(item)
-
     win.set_template("Pin cell")            # z-uniform → 3D extrudes
-    click("fission")
-    click("fission__3d")
+    win._on_result_selected("fission")
+    win._on_result_selected("fission__3d")
     assert calls["2d"] == ["fission"] and calls["extruded"] == ["fission"]
     win.close()
 
@@ -288,11 +267,11 @@ def test_load_examples_and_history(qapp, tmp_path):
     win = _win(tmp_path)
     for key in ("godiva", "pincell", "assembly", "shield"):
         win.load_example(key)
-    # archive a fabricated run into the project + reflect in history
+    # archive a fabricated run into the project + reflect in the tree's Saved runs
     sp = tmp_path / "sp.h5"
     sp.write_text("x")
     win.project.add_run(statepoint_src=sp, template="Godiva", parameters={"radius": 8.7},
                         keff=0.998, keff_std=0.0009)
     win._refresh_history()
-    assert win.history_panel.list.count() == 1
+    assert len(win.model_tree.history_ids()) == 1
     win.close()

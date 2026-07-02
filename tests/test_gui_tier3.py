@@ -44,30 +44,24 @@ def test_project_state_restores_across_windows(qapp, tmp_path):
     reopened.close()
 
 
-def test_history_panel_emits_signals(qapp):
+def test_saved_runs_live_in_the_model_builder(qapp):
+    """History lives under Results ▸ Saved runs in the Model Builder tree; the tree
+    knows the selected run ids for the load/compare/delete context actions."""
     from nbeast.core.project import RunRecord
-    from nbeast.gui.history import HistoryPanel
+    from nbeast.gui.model_builder import ModelBuilderTree
 
-    panel = HistoryPanel()
+    tree = ModelBuilderTree()
     recs = [RunRecord(id=f"run-000{i}", template="Godiva", parameters={}, keff=1.0 + i * 0.01,
                       keff_std=0.001) for i in (1, 2, 3)]
-    panel.set_runs(recs)
-    assert panel.list.count() == 3  # newest first, but count is what matters
+    tree.set_history(recs)
+    assert tree.history_ids() == ["run-0001", "run-0002", "run-0003"]
+    assert "Saved runs (3)" in tree.history_item.text(0)
 
-    loaded, compared = [], []
-    panel.loadRequested.connect(loaded.append)
-    panel.compareRequested.connect(lambda a, b: compared.append((a, b)))
-
-    panel.list.item(0).setSelected(True)
-    assert panel.load_btn.isEnabled() and not panel.compare_btn.isEnabled()
-    panel._on_load()
-    assert len(loaded) == 1
-
-    panel.list.item(1).setSelected(True)  # now two selected
-    assert panel.compare_btn.isEnabled()
-    panel._on_compare()
-    assert len(compared) == 1
-    panel.close()
+    # selecting history nodes exposes their ids to the context menu
+    tree.history_item.child(0).setSelected(True)
+    tree.history_item.child(2).setSelected(True)
+    assert set(tree._selected_history_ids()) == {"run-0001", "run-0003"}
+    tree.close()
 
 
 def test_archive_and_history_via_mainwindow(qapp, tmp_path):
@@ -78,7 +72,7 @@ def test_archive_and_history_via_mainwindow(qapp, tmp_path):
     win.project.add_run(statepoint_src=sp, template="Godiva", parameters={"radius": 8.7},
                         keff=0.998, keff_std=0.0009)
     win._refresh_history()
-    assert win.history_panel.list.count() == 1
+    assert len(win.model_tree.history_ids()) == 1
     win.close()
 
 
@@ -105,7 +99,7 @@ def test_delete_runs_with_confirmation(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
     win._delete_history_runs([rec.id])
     assert win.project.get_run(rec.id) is None
-    assert win.history_panel.list.count() == 0
+    assert len(win.model_tree.history_ids()) == 0
     win.close()
 
 

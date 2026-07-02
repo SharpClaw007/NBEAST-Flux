@@ -93,8 +93,9 @@ def test_mainwindow_edits_route_through_undo(qapp, tmp_path):
     assert win._param_values["Pin cell"]["pitch"] == original
     # tree reflects the undone value (refresh happens via the doc signal)
     texts = []
-    for i in range(win.model_tree.topLevelItemCount()):
-        top = win.model_tree.topLevelItem(i)
+    root = win.model_tree.model_root
+    for i in range(root.childCount()):
+        top = root.child(i)
         texts += [top.child(j).text(0) for j in range(top.childCount())]
     assert any(f"{original:.2f}".rstrip("0") in t or f"{original}" in t
                for t in texts if "pitch" in t.lower() or "Pitch" in t)

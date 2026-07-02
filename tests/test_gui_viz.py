@@ -71,7 +71,7 @@ def test_run_produces_spectrum_flux_and_png(qapp, tmp_path):
     assert png.exists() and png.stat().st_size > 0
 
     # Results field toggle: fission map is available and renders.
-    assert win.results_list.isEnabled()
+    assert all(not i.isDisabled() for i in win.model_tree.result_items())
     win._show_field("fission", switch_tab=False)
     fission_vtk = pathlib.Path(result.statepoint).parent / "fission.vtk"
     assert fission_vtk.exists(), "fission VTK not written"
